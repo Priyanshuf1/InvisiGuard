@@ -639,7 +639,40 @@ canvas.metric-canvas {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+}
+
+.timer-pills-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.timer-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(196, 118, 107, 0.25);
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.timer-pill:hover {
+  background: rgba(196, 118, 107, 0.15);
+  color: var(--text-primary);
+}
+
+.timer-pill.active {
+  background: rgba(196, 118, 107, 0.3);
+  border-color: var(--terra-base);
+  color: var(--terra-pale);
+  box-shadow: 0 0 10px rgba(196, 118, 107, 0.25);
 }
 
 .countdown-circle-wrap {

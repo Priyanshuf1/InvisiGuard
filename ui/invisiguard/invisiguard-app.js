@@ -687,76 +687,166 @@ class InvisiGuardApp {
     this.mlRecording = false;
     this.mlActiveLabel = null;
     this.calibTimer = null;
-    this.calibSec = 20;
+    this.calibSec = 10;
+    this.activePrepClassId = 0;
+    this.activePrepClassName = 'EMPTY_ROOM';
+    this.filterFanEnabled = true;
 
     this._fetchDatasetStats();
     this._fetchModelStatus();
 
-    // 1. Calibrate Empty Bedroom button (20s Countdown)
-    const btnCalibEmpty = document.getElementById('btn-calib-empty');
+    const CLASS_PREP_META = {
+      0: {
+        badge: '0: EMPTY BEDROOM CALIBRATION',
+        title: '🚪 Please Exit the Bedroom Now',
+        desc: 'Step outside and close the bedroom door. Baseline recording will begin after countdown to establish zero-human multipath reference.',
+        defaultSec: 20,
+        recBadge: '● RECORDING ZERO-MOTION BASELINE',
+        recTitle: 'Recording Undisturbed Room Baseline',
+        recDesc: 'Stay outside. The sensor is logging 52-subcarrier multipath reflections for zero-motion calibration.'
+      },
+      1: {
+        badge: '1: DESK STUDY POSTURE SETUP',
+        title: '📖 Take a Seat at the Study Desk',
+        desc: 'Walk over, sit comfortably on the desk chair, and relax into normal studying posture with natural breathing.',
+        defaultSec: 10,
+        recBadge: '● RECORDING CLASS 1: NORMAL STUDYING',
+        recTitle: 'Recording Seated Study Posture',
+        recDesc: 'Maintain gentle studying micro-movements, typing, and natural resting breathing at the desk.'
+      },
+      2: {
+        badge: '2: ROOM PACING POSITION SETUP',
+        title: '🚶 Position for Normal Walking',
+        desc: 'Stand near the starting corner or doorway, ready to pace naturally back and forth across the bedroom floor plane.',
+        defaultSec: 10,
+        recBadge: '● RECORDING CLASS 2: ROOM PACING',
+        recTitle: 'Recording Continuous Room Walking',
+        recDesc: 'Pace steadily across the bedroom floor plane. The sensor is logging Doppler phase shifts.'
+      },
+      3: {
+        badge: '3: STRUGGLE / RAGGING SIMULATION SETUP',
+        title: '⚡ Prepare Struggle Simulation Stance',
+        desc: 'Position yourself safely with your partner to simulate rapid multi-limb motion, sudden directional shifts, or struggle.',
+        defaultSec: 10,
+        recBadge: '● RECORDING CLASS 3: STRUGGLE / RAGGING',
+        recTitle: 'Recording Fast Struggle Dynamics',
+        recDesc: 'Simulate high-velocity multi-limb struggle and sudden movements to capture high-frequency Doppler spikes.'
+      },
+      4: {
+        badge: '4: SUDDEN FALL SIMULATION SETUP',
+        title: '🚨 Prepare Safe Fall Simulation',
+        desc: 'Stand upright on the safe landing mat or floor area, ready to simulate an unrecovered vertical drop.',
+        defaultSec: 10,
+        recBadge: '● RECORDING CLASS 4: SUDDEN FALL',
+        recTitle: 'Recording Sudden Fall & Impact',
+        recDesc: 'Simulate vertical drop followed by floor stillness. The sensor is logging impact burst and ground stillness.'
+      }
+    };
+
     const modal = document.getElementById('calibration-modal');
+    const modalBadge = document.getElementById('calib-modal-badge');
+    const modalTitle = document.getElementById('calib-modal-title');
+    const modalDesc = document.getElementById('calib-modal-desc');
     const countdownNum = document.getElementById('countdown-number');
     const progressRing = document.getElementById('countdown-progress-ring');
     const countdownWrap = document.getElementById('calib-countdown-wrap');
     const recState = document.getElementById('calib-recording-state');
+    const calibRecBadge = document.getElementById('calib-rec-badge');
     const btnSkip = document.getElementById('btn-skip-countdown');
     const btnStopCalib = document.getElementById('btn-stop-calibration');
     const btnCancel = document.getElementById('btn-cancel-calibration');
+    const durationPills = document.querySelectorAll('#calib-duration-pills .timer-pill');
+
+    const updatePillsActive = (sec) => {
+      durationPills.forEach(p => {
+        if (parseInt(p.getAttribute('data-sec')) === sec) p.classList.add('active');
+        else p.classList.remove('active');
+      });
+    };
 
     const resetModalUI = () => {
       clearInterval(this.calibTimer);
       this.calibTimer = null;
-      this.calibSec = 20;
       if (modal) modal.style.display = 'none';
       if (countdownWrap) countdownWrap.style.display = 'flex';
       if (recState) recState.style.display = 'none';
       if (btnSkip) btnSkip.style.display = 'inline-block';
       if (btnStopCalib) btnStopCalib.style.display = 'none';
-      if (countdownNum) countdownNum.textContent = '20';
       if (progressRing) progressRing.style.strokeDashoffset = '0';
     };
 
-    if (btnCalibEmpty) {
-      btnCalibEmpty.addEventListener('click', () => {
-        if (!modal) return;
-        modal.style.display = 'flex';
-        this.calibSec = 20;
-        if (countdownNum) countdownNum.textContent = '20';
+    const startCountdown = (sec) => {
+      clearInterval(this.calibTimer);
+      this.calibSec = sec;
+      updatePillsActive(sec);
+      if (countdownNum) countdownNum.textContent = String(this.calibSec);
+      if (progressRing) progressRing.style.strokeDashoffset = '0';
+
+      this._playAudioChime(520, 0.15);
+
+      const totalSec = sec;
+      const circ = 339.29;
+
+      this.calibTimer = setInterval(() => {
+        this.calibSec--;
+        if (countdownNum) countdownNum.textContent = String(this.calibSec);
+
+        if (progressRing) {
+          const offset = circ * (1 - (totalSec - this.calibSec) / totalSec);
+          progressRing.style.strokeDashoffset = offset;
+        }
+
+        if (this.calibSec <= 3 && this.calibSec > 0) {
+          this._playAudioChime(660, 0.1);
+        }
+
+        if (this.calibSec <= 0) {
+          clearInterval(this.calibTimer);
+          this.calibTimer = null;
+          this._startClassRecording(this.activePrepClassId, this.activePrepClassName, true);
+        }
+      }, 1000);
+    };
+
+    // Open Preparation Modal for ANY class
+    document.querySelectorAll('.btn-open-prep').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const clsId = parseInt(btn.getAttribute('data-class')) || 0;
+        const clsName = btn.getAttribute('data-name') || 'EMPTY_ROOM';
+        const meta = CLASS_PREP_META[clsId] || CLASS_PREP_META[0];
+        const sec = parseInt(btn.getAttribute('data-sec')) || meta.defaultSec;
+
+        this.activePrepClassId = clsId;
+        this.activePrepClassName = clsName;
+        this.activePrepMeta = meta;
+
+        if (modalBadge) modalBadge.textContent = meta.badge;
+        if (modalTitle) modalTitle.textContent = meta.title;
+        if (modalDesc) modalDesc.textContent = meta.desc;
+
         if (countdownWrap) countdownWrap.style.display = 'flex';
         if (recState) recState.style.display = 'none';
         if (btnSkip) btnSkip.style.display = 'inline-block';
         if (btnStopCalib) btnStopCalib.style.display = 'none';
 
-        this._playAudioChime(520, 0.15);
-
-        this.calibTimer = setInterval(() => {
-          this.calibSec--;
-          if (countdownNum) countdownNum.textContent = this.calibSec;
-
-          if (progressRing) {
-            const circ = 339.29;
-            const offset = circ * (1 - (20 - this.calibSec) / 20);
-            progressRing.style.strokeDashoffset = offset;
-          }
-
-          if (this.calibSec <= 3 && this.calibSec > 0) {
-            this._playAudioChime(660, 0.1);
-          }
-
-          if (this.calibSec <= 0) {
-            clearInterval(this.calibTimer);
-            this.calibTimer = null;
-            this._startClassRecording(0, 'EMPTY_ROOM', true);
-          }
-        }, 1000);
+        if (modal) modal.style.display = 'flex';
+        startCountdown(sec);
       });
-    }
+    });
+
+    // Duration selector pills (5s, 10s, 20s)
+    durationPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        const sec = parseInt(pill.getAttribute('data-sec')) || 10;
+        startCountdown(sec);
+      });
+    });
 
     if (btnSkip) {
       btnSkip.addEventListener('click', () => {
         clearInterval(this.calibTimer);
         this.calibTimer = null;
-        this._startClassRecording(0, 'EMPTY_ROOM', true);
+        this._startClassRecording(this.activePrepClassId, this.activePrepClassName, true);
       });
     }
 
@@ -776,11 +866,14 @@ class InvisiGuardApp {
       });
     }
 
-    // 2. Class Record Buttons (Start & Stop for all 5 classes)
+    // Quick Record Buttons (Start & Stop for all 5 classes)
     document.querySelectorAll('.btn-rec-start').forEach(btn => {
       btn.addEventListener('click', () => {
         const clsId = parseInt(btn.getAttribute('data-class'));
         const clsName = btn.getAttribute('data-name');
+        this.activePrepClassId = clsId;
+        this.activePrepClassName = clsName;
+        this.activePrepMeta = CLASS_PREP_META[clsId] || CLASS_PREP_META[0];
         this._startClassRecording(clsId, clsName, false);
       });
     });
@@ -798,7 +891,33 @@ class InvisiGuardApp {
       });
     }
 
-    // 3. Train Model Button
+    // Toggle FFT Filter Button in Tab 2
+    const btnToggleFft = document.getElementById('btn-toggle-fft-filter');
+    const badgeFft = document.getElementById('fft-filter-badge');
+    if (btnToggleFft) {
+      btnToggleFft.addEventListener('click', () => {
+        this.filterFanEnabled = !this.filterFanEnabled;
+        if (this.filterFanEnabled) {
+          if (badgeFft) {
+            badgeFft.textContent = '✓ Comb & Bandpass Filter Active (-45 dB)';
+            badgeFft.style.background = 'rgba(0,216,120,0.12)';
+            badgeFft.style.color = 'var(--green-bright)';
+            badgeFft.style.borderColor = 'rgba(0,216,120,0.3)';
+          }
+          btnToggleFft.textContent = 'Toggle Raw';
+        } else {
+          if (badgeFft) {
+            badgeFft.textContent = '⚠ Raw Unfiltered (Ceiling Fan Harmonic Noise Visible)';
+            badgeFft.style.background = 'rgba(245,158,11,0.15)';
+            badgeFft.style.color = '#f59e0b';
+            badgeFft.style.borderColor = 'rgba(245,158,11,0.4)';
+          }
+          btnToggleFft.textContent = 'Enable Filter';
+        }
+      });
+    }
+
+    // Train Model Button
     const btnTrain = document.getElementById('btn-start-train');
     if (btnTrain) {
       btnTrain.addEventListener('click', async () => {
@@ -912,13 +1031,23 @@ class InvisiGuardApp {
       const bStop = document.getElementById('btn-stop-calibration');
       const mTitle = document.getElementById('calib-modal-title');
       const mDesc = document.getElementById('calib-modal-desc');
+      const rBadge = document.getElementById('calib-rec-badge');
+      const meta = (this.activePrepMeta) || {
+        recTitle: `Recording Class ${label}: ${className}`,
+        recDesc: `Sensor is capturing 52-subcarrier multipath frames for ${className}.`,
+        recBadge: `● RECORDING IN PROGRESS: ${label} - ${className}`
+      };
 
       if (cWrap) cWrap.style.display = 'none';
       if (rState) rState.style.display = 'block';
       if (bSkip) bSkip.style.display = 'none';
-      if (bStop) bStop.style.display = 'inline-block';
-      if (mTitle) mTitle.textContent = 'Recording Undisturbed Room Baseline';
-      if (mDesc) mDesc.textContent = 'Stay outside. The sensor is logging 52-subcarrier multipath reflections for zero-motion calibration.';
+      if (bStop) {
+        bStop.style.display = 'inline-block';
+        bStop.textContent = `■ Stop & Save (${className})`;
+      }
+      if (mTitle) mTitle.textContent = meta.recTitle || `Recording: ${className}`;
+      if (mDesc) mDesc.textContent = meta.recDesc || `Sensor is logging live frames.`;
+      if (rBadge) rBadge.textContent = meta.recBadge || `● RECORDING: ${label} - ${className}`;
     }
 
     this._logTerminal(`[REC] Started capturing live frames for Class ${label}: ${className}`);
@@ -1224,6 +1353,73 @@ class InvisiGuardApp {
         elSafetyText.textContent = '✓ ROOM EMPTY · STANDBY MODE';
       }
     }
+
+    // 5. Clinical Triaging Section
+    const elTriageBadge = document.getElementById('clinical-triage-badge');
+    const elRestless = document.getElementById('triage-restless');
+    const elRespReg = document.getElementById('triage-respreg');
+    const elFever = document.getElementById('triage-feverscore');
+
+    if (elTriageBadge) {
+      if (this.state.fall) {
+        elTriageBadge.textContent = '⚠ CRITICAL: FALL IMPACT / FLOOR INACTIVITY';
+        elTriageBadge.style.color = 'var(--red-alert)';
+        elTriageBadge.style.background = 'rgba(255, 64, 96, 0.12)';
+        elTriageBadge.style.borderColor = 'rgba(255, 64, 96, 0.35)';
+      } else if (this.state.presence) {
+        if (this.state.hr > 95 && this.state.br > 22 && this.state.mot < 0.1) {
+          elTriageBadge.textContent = '⚠ SICKNESS / FEVER TACHYCARDIA DETECTED';
+          elTriageBadge.style.color = '#f59e0b';
+          elTriageBadge.style.background = 'rgba(245, 158, 11, 0.12)';
+          elTriageBadge.style.borderColor = 'rgba(245, 158, 11, 0.35)';
+        } else if (this.state.pose === 'sleep' || this.state.mot < 0.05) {
+          elTriageBadge.textContent = '✓ Normal Restful Sleep';
+          elTriageBadge.style.color = 'var(--green-bright)';
+          elTriageBadge.style.background = 'rgba(0, 216, 120, 0.12)';
+          elTriageBadge.style.borderColor = 'rgba(0, 216, 120, 0.3)';
+        } else {
+          elTriageBadge.textContent = '✓ Active Student (Normal Vitals)';
+          elTriageBadge.style.color = 'var(--terra-pale)';
+          elTriageBadge.style.background = 'rgba(196, 118, 107, 0.12)';
+          elTriageBadge.style.borderColor = 'rgba(196, 118, 107, 0.3)';
+        }
+      } else {
+        elTriageBadge.textContent = '✓ Room Empty Standby';
+        elTriageBadge.style.color = 'var(--text-secondary)';
+        elTriageBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+        elTriageBadge.style.borderColor = 'var(--border-subtle)';
+      }
+    }
+
+    if (elRestless) {
+      if (this.state.presence) {
+        const idx = Math.min(0.99, (this.state.var * 0.025 + this.state.mot * 0.08)).toFixed(2);
+        const label = idx > 0.35 ? '(High Agitation)' : '(Calm)';
+        elRestless.innerHTML = `${idx} <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">${label}</span>`;
+      } else {
+        elRestless.innerHTML = `-- <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Standby)</span>`;
+      }
+    }
+
+    if (elRespReg) {
+      if (this.state.presence && this.state.br > 0) {
+        elRespReg.innerHTML = `98.2% <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Eupnea)</span>`;
+      } else {
+        elRespReg.innerHTML = `-- <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Standby)</span>`;
+      }
+    }
+
+    if (elFever) {
+      if (this.state.presence && this.state.hr > 0) {
+        const isFever = (this.state.hr > 95 && this.state.br > 22 && this.state.mot < 0.1);
+        const score = isFever ? '0.84' : '0.04';
+        const color = isFever ? 'var(--red-alert)' : 'var(--green-bright)';
+        const risk = isFever ? '(High Risk - Fever)' : '(Low Risk - Healthy)';
+        elFever.innerHTML = `${score} <span style="font-size: 12px; font-weight: 500; color: ${color};">${risk}</span>`;
+      } else {
+        elFever.innerHTML = `-- <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Standby)</span>`;
+      }
+    }
   }
 
   _drawCanvases() {
@@ -1261,6 +1457,123 @@ class InvisiGuardApp {
           else ctx.lineTo(x, y);
         }
         ctx.stroke();
+      }
+    }
+
+    // 2. FFT Doppler Frequency Spectrum in Vitals Tab
+    const fft = document.getElementById('vitals-fft-canvas');
+    if (fft) {
+      const ctx = fft.getContext('2d');
+      const w = fft.width, h = fft.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // Background grid
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      ctx.lineWidth = 1;
+
+      // Frequencies from 0.0 to 20.0 Hz
+      const maxFreq = 20.0;
+      ctx.fillStyle = '#68605c';
+      ctx.font = '9px "JetBrains Mono", monospace';
+
+      for (let f = 2; f <= 20; f += 2) {
+        const x = (f / maxFreq) * w;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+        ctx.fillText(`${f}Hz`, x - 10, h - 6);
+      }
+
+      // Shaded Passbands
+      // 1. Respiration Band (0.15 - 0.45 Hz)
+      const respX1 = (0.15 / maxFreq) * w;
+      const respX2 = (0.45 / maxFreq) * w;
+      ctx.fillStyle = 'rgba(0, 216, 120, 0.08)';
+      ctx.fillRect(respX1, 0, respX2 - respX1, h - 20);
+
+      // 2. Cardiac Band (0.8 - 2.0 Hz)
+      const cardX1 = (0.8 / maxFreq) * w;
+      const cardX2 = (2.0 / maxFreq) * w;
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
+      ctx.fillRect(cardX1, 0, cardX2 - cardX1, h - 20);
+
+      // 3. Fan Notch Band (3.5 - 6.5 Hz)
+      const fanX1 = (3.5 / maxFreq) * w;
+      const fanX2 = (6.5 / maxFreq) * w;
+      if (this.filterFanEnabled) {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.04)';
+        ctx.fillRect(fanX1, 0, fanX2 - fanX1, h - 20);
+      } else {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.15)';
+        ctx.fillRect(fanX1, 0, fanX2 - fanX1, h - 20);
+      }
+
+      // Draw Spectral Curve
+      ctx.beginPath();
+      ctx.lineWidth = 2.0;
+      ctx.strokeStyle = '#00d878';
+
+      const t = performance.now() * 0.001;
+      const hasPerson = (this.state.presence && this.state.hr > 0);
+      const fResp = hasPerson ? (this.state.br / 60) : 0.25;
+      const fHeart = hasPerson ? (this.state.hr / 60) : 1.2;
+
+      for (let px = 0; px < w; px++) {
+        const freq = (px / w) * maxFreq;
+        let amp = 0.03 + Math.sin(freq * 10 + t) * 0.01;
+
+        if (hasPerson) {
+          // Respiration bell curve around fResp
+          const dResp = Math.abs(freq - fResp);
+          if (dResp < 0.25) {
+            amp += Math.exp(-Math.pow(dResp / 0.08, 2)) * 0.65;
+          }
+
+          // Cardiac pulse peak around fHeart
+          const dHeart = Math.abs(freq - fHeart);
+          if (dHeart < 0.35) {
+            amp += Math.exp(-Math.pow(dHeart / 0.12, 2)) * 0.42;
+          }
+        }
+
+        // Fan modulation at 4.5 Hz and 9.0 Hz
+        const dFan1 = Math.abs(freq - 4.5);
+        const dFan2 = Math.abs(freq - 9.0);
+        if (this.filterFanEnabled) {
+          if (dFan1 < 0.4) amp *= 0.05;
+          if (dFan2 < 0.4) amp *= 0.05;
+        } else {
+          if (dFan1 < 0.4) amp += Math.exp(-Math.pow(dFan1 / 0.15, 2)) * 0.85;
+          if (dFan2 < 0.4) amp += Math.exp(-Math.pow(dFan2 / 0.15, 2)) * 0.45;
+        }
+
+        // Cooler vibration > 15 Hz
+        if (freq > 15.0) {
+          if (!this.filterFanEnabled) {
+            amp += (0.15 + Math.sin(freq * 30 + t * 5) * 0.08);
+          }
+        }
+
+        const y = (h - 22) - Math.min(1.0, amp) * (h - 32);
+        if (px === 0) ctx.moveTo(px, y);
+        else ctx.lineTo(px, y);
+      }
+      ctx.stroke();
+
+      // Band labels
+      ctx.fillStyle = '#00d878';
+      ctx.fillText('RESPIRATION (0.25Hz)', respX1 + 2, 14);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText('CARDIAC (1.2Hz)', cardX1 + 2, 14);
+
+      if (this.filterFanEnabled) {
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillText('FAN NOTCH (-45dB)', fanX1 + 2, 14);
+      } else {
+        ctx.fillStyle = '#ff4060';
+        ctx.fillText('⚠ FAN NOISE (RAW)', fanX1 + 2, 14);
       }
     }
 

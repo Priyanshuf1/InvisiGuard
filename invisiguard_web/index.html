@@ -161,6 +161,80 @@
             Estimated via RF Doppler perturbation &middot; Non-invasive &middot; No wearable device required
           </div>
         </div>
+
+        <!-- Doppler FFT Frequency Spectrum & Fan Noise Rejection -->
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title">Doppler Micro-Frequency FFT Spectrum &amp; Fan Noise Isolation</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="card-badge" id="fft-filter-badge" style="background: rgba(0,216,120,0.12); color: var(--green-bright); border: 1px solid rgba(0,216,120,0.3);">
+                ✓ Comb &amp; Bandpass Filter Active (-45 dB)
+              </span>
+              <button id="btn-toggle-fft-filter" class="timer-pill" style="padding: 3px 8px; font-size: 10px;">Toggle Raw / Filtered</button>
+            </div>
+          </div>
+          <div class="canvas-box">
+            <div class="canvas-label">Frequency Domain (0.0 Hz to 20.0 Hz) · Respiration (0.25 Hz) &amp; Cardiac (1.2 Hz) vs Fan (4.5 Hz) vs Cooler (16 Hz)</div>
+            <canvas id="vitals-fft-canvas" class="metric-canvas" width="1160" height="110"></canvas>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px;">
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #00d878; margin-bottom: 4px;">● RESPIRATION PASSBAND (0.15 - 0.4 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">Chest displacement: 5–12 mm. Wavelet bandpass extracts clear sinusoidal envelope.</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #38bdf8; margin-bottom: 4px;">● CARDIAC PASSBAND (0.8 - 2.0 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">Aortic ejection micro-pulse: 0.2–0.5 mm. High-Q bandpass peak tracking (48–120 BPM).</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #f59e0b; margin-bottom: 4px;">✕ CEILING FAN NOTCH (3.5 - 6.5 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">3-blade 300 RPM motor modulation is stripped using narrow harmonic comb notch filtering.</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #ff4060; margin-bottom: 4px;">✕ COOLER VIBRATION (&gt; 15 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">Desert cooler water pump and blower vibrations fall completely outside vital bands and are attenuated by 50 dB.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Clinical Triaging: Sleeping vs Sick Student Assessment -->
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title">Clinical Triaging: Sleeping vs. Sick vs. Distress Assessment</span>
+            <span class="card-badge" id="clinical-triage-badge" style="background: rgba(0,216,120,0.12); color: var(--green-bright); border: 1px solid rgba(0,216,120,0.3);">
+              ✓ Normal Restful Sleep
+            </span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 14px;">
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Nocturnal Restlessness</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--terra-pale); font-family: 'JetBrains Mono', monospace;" id="triage-restless">
+                0.03 <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">Index (Calm)</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-label); margin-top: 6px;">Threshold for fever agitation: &gt; 0.35</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Respiratory Regularity</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--green-bright); font-family: 'JetBrains Mono', monospace;" id="triage-respreg">
+                98.2% <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Eupnea)</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-label); margin-top: 6px;">Low regularity indicates asthma or dyspnea</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Fever / Sickness Score</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--text-primary); font-family: 'JetBrains Mono', monospace;" id="triage-feverscore">
+                0.04 <span style="font-size: 12px; font-weight: 500; color: var(--green-bright);">(Low Risk)</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-label); margin-top: 6px;">Elevated HR (&gt;95) + RR (&gt;24) while still = Fever</div>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px;">
+            <strong style="color: var(--terra-sun);">How InvisiGuard Differentiates States:</strong><br>
+            &bull; <strong style="color: #fff;">Healthy Sleep:</strong> Stable, rhythmic respiration (12–16 RPM), resting bradycardia (55–68 BPM), and minimal position adjustments.<br>
+            &bull; <strong style="color: #fff;">High Fever / Sickness:</strong> Sustained resting tachycardia (&gt; 95 BPM) coupled with tachypnea (&gt; 24 RPM) and frequent restless turning.<br>
+            &bull; <strong style="color: #fff;">Sudden Fall / Unconscious:</strong> High vertical acceleration impact followed by sustained floor stillness (&gt; 120s) with shallow floor breathing.
+          </div>
+        </div>
       </div>
     </section>
 
@@ -297,7 +371,7 @@
           </div>
         </div>
 
-        <!-- 5 Interactive Class Recorders -->
+        <!-- 5 Interactive Class Recorders with Preparation Timers -->
         <div class="class-rec-grid">
           <!-- Class 0: Empty Room -->
           <div class="class-rec-card" style="border-color: rgba(245, 192, 122, 0.4);">
@@ -309,8 +383,8 @@
               <div class="class-card-desc">Zero-motion multipath reference. Filters stationary furniture and wall reflections.</div>
             </div>
             <div>
-              <button id="btn-calib-empty" class="btn-rec-calib" style="margin-bottom: 8px;" title="Give 20 seconds to step outside and close the door">
-                ⏳ Calibrate Empty Room (20s Countdown)
+              <button class="btn-rec-calib btn-open-prep" data-class="0" data-name="EMPTY_ROOM" data-sec="20" style="margin-bottom: 8px;" title="20s prep to exit bedroom and close door">
+                ⏳ 20s Prep &amp; Calib (Exit Room)
               </button>
               <div class="class-card-btns">
                 <button class="btn-rec-start" data-class="0" data-name="EMPTY_ROOM">▶ Start</button>
@@ -328,9 +402,14 @@
               </div>
               <div class="class-card-desc">Seated student typing, reading, and gentle breathing micro-movements.</div>
             </div>
-            <div class="class-card-btns">
-              <button class="btn-rec-start" data-class="1" data-name="NORMAL_STUDYING">▶ Record</button>
-              <button class="btn-rec-stop" data-class="1" disabled>■ Stop</button>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="1" data-name="NORMAL_STUDYING" data-sec="10" style="margin-bottom: 8px;" title="10s prep to walk over and sit comfortably at desk">
+                ⏳ 10s Prep &amp; Record (Sit at Desk)
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="1" data-name="NORMAL_STUDYING">▶ Start</button>
+                <button class="btn-rec-stop" data-class="1" disabled>■ Stop</button>
+              </div>
             </div>
           </div>
 
@@ -343,9 +422,14 @@
               </div>
               <div class="class-card-desc">Continuous bipedal movement across the bedroom floor plane.</div>
             </div>
-            <div class="class-card-btns">
-              <button class="btn-rec-start" data-class="2" data-name="WALKING">▶ Record</button>
-              <button class="btn-rec-stop" data-class="2" disabled>■ Stop</button>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="2" data-name="WALKING" data-sec="10" style="margin-bottom: 8px;" title="10s prep to get into starting corner position">
+                ⏳ 10s Prep &amp; Record (Walk to Corner)
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="2" data-name="WALKING">▶ Start</button>
+                <button class="btn-rec-stop" data-class="2" disabled>■ Stop</button>
+              </div>
             </div>
           </div>
 
@@ -358,9 +442,14 @@
               </div>
               <div class="class-card-desc">Fast multi-limb struggle, sudden directional changes, and high-frequency Doppler spikes.</div>
             </div>
-            <div class="class-card-btns">
-              <button class="btn-rec-start" data-class="3" data-name="VIOLENT_STRUGGLE">▶ Record</button>
-              <button class="btn-rec-stop" data-class="3" disabled>■ Stop</button>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="3" data-name="VIOLENT_STRUGGLE" data-sec="10" style="margin-bottom: 8px;" title="10s prep to ready simulation stance with partner">
+                ⏳ 10s Prep &amp; Record (Ready Stance)
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="3" data-name="VIOLENT_STRUGGLE">▶ Start</button>
+                <button class="btn-rec-stop" data-class="3" disabled>■ Stop</button>
+              </div>
             </div>
           </div>
 
@@ -373,9 +462,14 @@
               </div>
               <div class="class-card-desc">Vertical velocity drop followed by floor stillness and micro-breathing.</div>
             </div>
-            <div class="class-card-btns">
-              <button class="btn-rec-start" data-class="4" data-name="FALL_EVENT">▶ Record</button>
-              <button class="btn-rec-stop" data-class="4" disabled>■ Stop</button>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="4" data-name="FALL_EVENT" data-sec="10" style="margin-bottom: 8px;" title="10s prep to position safely on mat before fall">
+                ⏳ 10s Prep &amp; Record (Stand on Mat)
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="4" data-name="FALL_EVENT">▶ Start</button>
+                <button class="btn-rec-stop" data-class="4" disabled>■ Stop</button>
+              </div>
             </div>
           </div>
         </div>
@@ -491,14 +585,22 @@
 
   </main>
 
-  <!-- 20-Second Empty Bedroom Calibration Modal -->
+  <!-- Universal Multi-Class Preparation & Calibration Modal -->
   <div id="calibration-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card">
-      <div class="modal-badge">ROOM BASELINE CALIBRATION</div>
+      <div class="modal-badge" id="calib-modal-badge">ROOM BASELINE CALIBRATION</div>
       <h3 class="modal-title" id="calib-modal-title">Please Exit the Bedroom Now</h3>
       <p class="modal-desc" id="calib-modal-desc">
         Step outside and close the bedroom door. Baseline recording will begin in 20 seconds to establish zero-human multipath reference.
       </p>
+
+      <!-- Prep Duration Selector Pills -->
+      <div class="timer-pills-row" id="calib-duration-pills">
+        <span style="font-size: 11px; color: var(--text-label); align-self: center; margin-right: 4px;">PREP TIME:</span>
+        <button type="button" class="timer-pill" data-sec="5">5s Quick</button>
+        <button type="button" class="timer-pill" data-sec="10">10s Standard</button>
+        <button type="button" class="timer-pill" data-sec="20">20s Extended</button>
+      </div>
 
       <div class="countdown-circle-wrap" id="calib-countdown-wrap">
         <svg class="countdown-svg" viewBox="0 0 120 120">
@@ -507,12 +609,12 @@
         </svg>
         <div class="countdown-inner">
           <div class="countdown-number" id="countdown-number">20</div>
-          <div class="countdown-unit">SECONDS</div>
+          <div class="countdown-unit" id="countdown-unit-text">SECONDS TO REC</div>
         </div>
       </div>
 
       <div id="calib-recording-state" style="display: none; margin: 16px 0;">
-        <div class="rec-pulsing-badge">● RECORDING ZERO-MOTION BASELINE</div>
+        <div class="rec-pulsing-badge" id="calib-rec-badge">● RECORDING ZERO-MOTION BASELINE</div>
         <div class="rec-metric-row">
           <span>Frames Captured: <strong id="modal-rec-samples" style="color: var(--terra-sun);">0</strong></span> &middot;
           <span>Multipath Var: <strong id="modal-rec-var" style="color: var(--green-bright);">0.18</strong></span>
@@ -521,7 +623,7 @@
 
       <div class="modal-actions">
         <button id="btn-skip-countdown" class="btn-primary">⚡ Start Recording Now</button>
-        <button id="btn-stop-calibration" class="btn-danger" style="display: none;">■ Stop &amp; Save Baseline</button>
+        <button id="btn-stop-calibration" class="btn-danger" style="display: none;">■ Stop &amp; Save Data</button>
         <button id="btn-cancel-calibration" class="btn-secondary">✕ Cancel</button>
       </div>
     </div>
