@@ -1204,6 +1204,8 @@ class InvisiGuardApp {
 
       if (this.state.fall) this.state.pose = 'fallen';
       else if (this.state.struggle || cls.motion_level === 'active' || this.state.mlClass === 'WALKING' || this.state.mlClass === 'VIOLENT_STRUGGLE') this.state.pose = 'walking';
+      else if (this.state.triage && (this.state.triage.state === 'HEALTHY_RESTFUL_SLEEP' || this.state.triage.state === 'SICK_HIGH_FEVER')) this.state.pose = 'sleep';
+      else if (this.state.mlClass === 'NORMAL_STUDYING') this.state.pose = 'study';
       else this.state.pose = 'standing';
     } else {
       this.state.hr = 0;
@@ -1235,6 +1237,9 @@ class InvisiGuardApp {
     if (s === 'empty') {
       this.state.presence = false;
       this.state.pose = 'standing';
+      this.state.mlClass = 'EMPTY_ROOM';
+      this.state.mlConf = 0.99;
+      this.state.struggle = false;
       this.state.hr = 0;
       this.state.br = 0;
       this.state.conf = 0;
@@ -1253,6 +1258,9 @@ class InvisiGuardApp {
     } else if (s === 'sleep') {
       this.state.presence = true;
       this.state.pose = 'sleep';
+      this.state.mlClass = 'NORMAL_STUDYING';
+      this.state.mlConf = 0.96;
+      this.state.struggle = false;
       this.state.hr = Math.round(58 + Math.sin(t * 0.3) * 3);
       this.state.br = Math.round(12 + Math.cos(t * 0.2) * 1.5);
       this.state.conf = 96;
@@ -1271,6 +1279,9 @@ class InvisiGuardApp {
     } else if (s === 'fever') {
       this.state.presence = true;
       this.state.pose = 'sleep';
+      this.state.mlClass = 'NORMAL_STUDYING';
+      this.state.mlConf = 0.92;
+      this.state.struggle = false;
       this.state.hr = Math.round(104 + Math.sin(t * 0.5) * 4);
       this.state.br = Math.round(25 + Math.cos(t * 0.4) * 2);
       this.state.conf = 97;
@@ -1289,6 +1300,9 @@ class InvisiGuardApp {
     } else if (s === 'study') {
       this.state.presence = true;
       this.state.pose = 'study';
+      this.state.mlClass = 'NORMAL_STUDYING';
+      this.state.mlConf = 0.95;
+      this.state.struggle = false;
       this.state.hr = Math.round(70 + Math.sin(t * 0.4) * 3);
       this.state.br = Math.round(15 + Math.cos(t * 0.3) * 1.5);
       this.state.conf = 92;
@@ -1299,6 +1313,9 @@ class InvisiGuardApp {
     } else if (s === 'walking') {
       this.state.presence = true;
       this.state.pose = 'walking';
+      this.state.mlClass = 'WALKING';
+      this.state.mlConf = 0.94;
+      this.state.struggle = false;
       this.state.hr = Math.round(88 + Math.sin(t * 0.6) * 5);
       this.state.br = Math.round(20 + Math.cos(t * 0.4) * 2);
       this.state.conf = 95;
@@ -1309,6 +1326,9 @@ class InvisiGuardApp {
     } else if (s === 'fall') {
       this.state.presence = true;
       this.state.pose = 'fallen';
+      this.state.mlClass = 'FALL_EVENT';
+      this.state.mlConf = 0.98;
+      this.state.struggle = false;
       this.state.hr = Math.round(98 + Math.sin(t * 0.8) * 8);
       this.state.br = Math.round(24 + Math.cos(t * 0.6) * 3);
       this.state.conf = 98;
@@ -1319,6 +1339,9 @@ class InvisiGuardApp {
     } else {
       this.state.presence = true;
       this.state.pose = 'standing';
+      this.state.mlClass = 'NORMAL_STUDYING';
+      this.state.mlConf = 0.90;
+      this.state.struggle = false;
       this.state.hr = Math.round(74 + Math.sin(t * 0.5) * 4);
       this.state.br = Math.round(16 + Math.cos(t * 0.3) * 2);
       this.state.conf = 94;
@@ -1526,6 +1549,16 @@ class InvisiGuardApp {
       } else {
         elFever.innerHTML = `-- <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Standby)</span>`;
       }
+    }
+
+    // 6. ML Live Prediction Card
+    const elPredCls = document.getElementById('live-pred-class');
+    const elPredConf = document.getElementById('live-pred-conf');
+    if (elPredCls && this.state.mlClass) {
+      elPredCls.textContent = this.state.mlClass;
+    }
+    if (elPredConf && this.state.mlConf) {
+      elPredConf.textContent = `${Math.round(this.state.mlConf * 100)}%`;
     }
   }
 
