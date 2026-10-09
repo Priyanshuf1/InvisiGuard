@@ -624,14 +624,16 @@ class SensingState:
             self.node_id = node_id
             self.sequence = seq
             self.source_addr = source_addr
-            self.presence = presence >= 0.30
-            self.motion_band_power = motion
-            self.motion_level = "active" if motion >= 0.15 else ("present_still" if self.presence else "absent")
+            m_safe = float(motion) if math.isfinite(motion) else 0.0
+            p_safe = float(presence) if math.isfinite(presence) else 0.0
+            self.presence = p_safe >= 0.30
+            self.motion_band_power = m_safe
+            self.motion_level = "active" if m_safe >= 0.15 else ("present_still" if self.presence else "absent")
             self.confidence = 0.92
-            if resp_bpm > 0:
-                self.breathing_rate_bpm = resp_bpm
-            if hb_bpm > 0:
-                self.heartrate_bpm = hb_bpm
+            if resp_bpm > 0 and math.isfinite(resp_bpm):
+                self.breathing_rate_bpm = float(resp_bpm)
+            if hb_bpm > 0 and math.isfinite(hb_bpm):
+                self.heartrate_bpm = float(hb_bpm)
 
     def get_snapshot(self) -> Dict[str, Any]:
         with self.lock:
@@ -639,6 +641,15 @@ class SensingState:
             self.dsp_filtering["baseline_calibrated"] = self.dsp_engine.baseline_calibrated
             self.dsp_filtering["fan_filter_enabled"] = self.dsp_engine.fan_filter_enabled
             hw_stat = self.get_hardware_status()
+            if "usb_serial_scanner" in globals() and usb_serial_scanner is not None:
+                ser_stat = usb_serial_scanner.get_status()
+                if ser_stat.get("connected"):
+                    hw_stat["port"] = ser_stat["port"]
+                    hw_stat["baud_rate"] = ser_stat["baud_rate"]
+                    hw_stat["packet_rate_hz"] = ser_stat["packet_rate_hz"]
+                    hw_stat["snr_db"] = ser_stat["snr_db"]
+                    hw_stat["transport"] = "serial"
+                    hw_stat["connected"] = True
             # If no packet received recently, synthesize subtle natural rhythm
             if now - self.last_packet_time > 3.0:
                 t = now
@@ -1353,7 +1364,7 @@ def build_sensing_update_message(snap: Dict[str, Any]) -> str:
                 "pose": "standing" if snap["motion_level"] == "active" else "sitting",
                 "position": [0.0, 0.0, 0.0],
                 "confidence": snap["confidence"],
-                "motion_score": int(snap["motion_band_power"] * 100),
+                "motion_score": int(float(snap.get("motion_band_power", 0.0)) * 100) if math.isfinite(snap.get("motion_band_power", 0.0)) else 0,
             }
         ] if snap["presence"] else [],
         "signal_field": signal_field,
@@ -1491,9 +1502,9 @@ class BroadcasterHub:
 
     async def _safe_send_sensing(self, client: Any, payload: str) -> Optional[Any]:
         try:
-            await self.send_to(client, payload)
+            await asyncio.wait_for(self.send_to(client, payload), timeout=2.0)
             return None
-        except Exception:
+        except (Exception, BaseException):
             return client
 
     async def broadcast_sensing(self, payload: str):
@@ -1501,7 +1512,7 @@ class BroadcasterHub:
             return
         clients = list(self.sensing_clients)
         results = await asyncio.gather(*[self._safe_send_sensing(c, payload) for c in clients], return_exceptions=True)
-        dead = [r for r in results if r is not None and not isinstance(r, Exception)]
+        dead = [r for r in results if r in clients]
         if dead:
             async with self.lock:
                 for c in dead:
@@ -1510,9 +1521,9 @@ class BroadcasterHub:
 
     async def _safe_send_pose(self, client: Any, payload: str) -> Optional[Any]:
         try:
-            await self.send_to(client, payload)
+            await asyncio.wait_for(self.send_to(client, payload), timeout=2.0)
             return None
-        except Exception:
+        except (Exception, BaseException):
             return client
 
     async def broadcast_pose(self, payload: str):
@@ -1520,7 +1531,7 @@ class BroadcasterHub:
             return
         clients = list(self.pose_clients)
         results = await asyncio.gather(*[self._safe_send_pose(c, payload) for c in clients], return_exceptions=True)
-        dead = [r for r in results if r is not None and not isinstance(r, Exception)]
+        dead = [r for r in results if r in clients]
         if dead:
             async with self.lock:
                 for c in dead:

@@ -355,6 +355,8 @@ class UniversalCsiParser:
             return None
         try:
             fields = struct.unpack_from("<IBBHIbBxxffII", raw, 0)
+            if fields[0] != cls.MAGIC_VITALS:
+                return None
             node_id = fields[1]
             br_raw = fields[3]
             hr_raw = fields[4]
@@ -363,16 +365,23 @@ class UniversalCsiParser:
             hb_bpm = float(hr_raw) / 10000.0 if hr_raw > 0 else 72.0
             motion = fields[7] if len(fields) > 7 else 0.1
             presence_score = fields[8] if len(fields) > 8 else 0.85
+
+            motion_f = float(motion) if math.isfinite(motion) else 0.1
+            presence_f = float(presence_score) if math.isfinite(presence_score) else 0.85
+            resp_f = float(resp_bpm) if math.isfinite(resp_bpm) else 16.0
+            hb_f = float(hb_bpm) if math.isfinite(hb_bpm) else 72.0
+            rssi_f = float(rssi) if math.isfinite(rssi) else -50.0
+
             return {
                 "type": "vitals",
                 "protocol": "adr039_vitals",
                 "node_id": node_id,
                 "seq": int(time.time() * 10) % 65535,
-                "motion": float(motion),
-                "presence": float(presence_score),
-                "resp_bpm": round(resp_bpm, 1),
-                "hb_bpm": round(hb_bpm, 1),
-                "rssi": float(rssi),
+                "motion": motion_f,
+                "presence": presence_f,
+                "resp_bpm": round(resp_f, 1),
+                "hb_bpm": round(hb_f, 1),
+                "rssi": rssi_f,
                 "source_addr": source_addr,
             }
         except Exception as e:
@@ -386,15 +395,21 @@ class UniversalCsiParser:
             return None
         try:
             fields = struct.unpack_from("<IBBHQfffffffffHHI", raw, 0)
+            if fields[0] != cls.MAGIC_C6_FEAT:
+                return None
+            m_val = float(fields[5]) if math.isfinite(fields[5]) else 0.1
+            p_val = float(fields[6]) if math.isfinite(fields[6]) else 0.85
+            r_val = float(fields[7]) if math.isfinite(fields[7]) else 16.0
+            h_val = float(fields[9]) if math.isfinite(fields[9]) else 72.0
             return {
                 "type": "c6_feature",
                 "protocol": "adr081_c6",
                 "node_id": fields[1],
                 "seq": fields[3],
-                "motion": float(fields[5]),
-                "presence": float(fields[6]),
-                "resp_bpm": round(float(fields[7]), 1),
-                "hb_bpm": round(float(fields[9]), 1),
+                "motion": m_val,
+                "presence": p_val,
+                "resp_bpm": round(r_val, 1),
+                "hb_bpm": round(h_val, 1),
                 "source_addr": source_addr,
             }
         except Exception as e:
@@ -597,8 +612,18 @@ class UsbSerialScanner:
                     buf.extend(chunk)
 
                 packet_parsed = False
-                magic_bytes = b"\x01\x00\x11\xc5"
-                m_idx = buf.find(magic_bytes)
+                magic_map = {
+                    b"\x01\x00\x11\xc5": "adr018",
+                    b"\x02\x00\x11\xc5": "adr039",
+                    b"\x06\x00\x11\xc5": "adr081",
+                }
+                m_idx = -1
+                matched_magic = None
+                for mb in magic_map:
+                    idx = buf.find(mb)
+                    if idx != -1 and (m_idx == -1 or idx < m_idx):
+                        m_idx = idx
+                        matched_magic = mb
 
                 if m_idx != -1:
                     # If there are bytes before magic, check for CSV lines before discarding
@@ -614,31 +639,58 @@ class UsbSerialScanner:
                                     first_frame_found = True
                                     last_packet_rx = time.time()
                                     packet_parsed = True
-                            m_idx = buf.find(magic_bytes)
+                            # Re-scan for earliest magic after consuming text line
+                            m_idx = -1
+                            matched_magic = None
+                            for mb in magic_map:
+                                idx = buf.find(mb)
+                                if idx != -1 and (m_idx == -1 or idx < m_idx):
+                                    m_idx = idx
+                                    matched_magic = mb
                         else:
                             # Discard non-matching preamble before magic
                             del buf[:m_idx]
                             m_idx = 0
 
                     if m_idx == 0:
-                        if len(buf) >= 20:
-                            magic, node_id, n_ant, n_sc = struct.unpack_from("<IBBH", buf, 0)
-                            if n_sc < 4 or n_sc > 512 or n_ant < 1 or n_ant > 4:
-                                # False magic match, discard magic bytes
-                                del buf[:4]
-                            else:
-                                total_len = 20 + n_ant * n_sc * 2
-                                if len(buf) >= total_len:
-                                    raw_pkt = bytes(buf[:total_len])
-                                    del buf[:total_len]
-                                    parsed = UniversalCsiParser.parse(raw_pkt, source_addr=f"serial:{port_name}")
-                                    if parsed:
-                                        self._handle_decoded_packet(parsed, port_name, baud)
-                                        first_frame_found = True
-                                        last_packet_rx = time.time()
-                                        packet_parsed = True
-                                # If len(buf) < total_len: packet is fragmented across chunks.
-                                # DO NOT parse newlines inside the binary packet payload!
+                        if matched_magic == b"\x01\x00\x11\xc5":
+                            if len(buf) >= 20:
+                                magic, node_id, n_ant, n_sc = struct.unpack_from("<IBBH", buf, 0)
+                                if n_sc < 4 or n_sc > 512 or n_ant < 1 or n_ant > 4:
+                                    del buf[:4]
+                                else:
+                                    total_len = 20 + n_ant * n_sc * 2
+                                    if len(buf) >= total_len:
+                                        raw_pkt = bytes(buf[:total_len])
+                                        del buf[:total_len]
+                                        parsed = UniversalCsiParser.parse(raw_pkt, source_addr=f"serial:{port_name}")
+                                        if parsed:
+                                            self._handle_decoded_packet(parsed, port_name, baud)
+                                            first_frame_found = True
+                                            last_packet_rx = time.time()
+                                            packet_parsed = True
+                        elif matched_magic == b"\x02\x00\x11\xc5":
+                            total_len = 32
+                            if len(buf) >= total_len:
+                                raw_pkt = bytes(buf[:total_len])
+                                del buf[:total_len]
+                                parsed = UniversalCsiParser.parse(raw_pkt, source_addr=f"serial:{port_name}")
+                                if parsed:
+                                    self._handle_decoded_packet(parsed, port_name, baud)
+                                    first_frame_found = True
+                                    last_packet_rx = time.time()
+                                    packet_parsed = True
+                        elif matched_magic == b"\x06\x00\x11\xc5":
+                            total_len = 60
+                            if len(buf) >= total_len:
+                                raw_pkt = bytes(buf[:total_len])
+                                del buf[:total_len]
+                                parsed = UniversalCsiParser.parse(raw_pkt, source_addr=f"serial:{port_name}")
+                                if parsed:
+                                    self._handle_decoded_packet(parsed, port_name, baud)
+                                    first_frame_found = True
+                                    last_packet_rx = time.time()
+                                    packet_parsed = True
                 else:
                     # No binary magic in buffer: parse newline-delimited CSI_DATA CSV lines
                     nl_idx = buf.find(b"\n")
