@@ -47,6 +47,12 @@ from starlette.staticfiles import StaticFiles
 import uvicorn
 import websockets
 
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from invisiguard.universal_parser import UniversalCsiParser, UsbSerialScanner
+
 # Register MIME types for Windows environments
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("application/javascript", ".mjs")
@@ -238,6 +244,7 @@ class WiFiCsiDspEngine:
         motion_band: float,
         seq: int,
         timestamp: float,
+        phases: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
         with self.lock:
             if not amplitudes or len(amplitudes) < 10:
@@ -245,10 +252,16 @@ class WiFiCsiDspEngine:
             else:
                 amps = np.array(amplitudes[:52], dtype=np.float64)
 
-            # 1. Tier 1: Adjacent Subcarrier CSI Ratio amplitude modulation
-            # R_k = H_k / H_{k+1}
-            sc_ratio = amps[1:] / (amps[:-1] + 1e-4)
-            ratio_metric = float(np.mean(np.abs(sc_ratio - 1.0)))
+            # 1. Tier 1: Adjacent Subcarrier CSI Ratio amplitude/phase modulation
+            # R_k = H_k / H_{k+1} (cancels CFO & SFO clock drift)
+            if phases and len(phases) >= len(amps):
+                phase_arr = np.array(phases[:len(amps)], dtype=np.float64)
+                H = amps * np.exp(1j * phase_arr)
+                sc_ratio = H[1:] / (H[:-1] + 1e-4)
+                ratio_metric = float(np.mean(np.abs(sc_ratio - 1.0)))
+            else:
+                sc_ratio = amps[1:] / (amps[:-1] + 1e-4)
+                ratio_metric = float(np.mean(np.abs(sc_ratio - 1.0)))
 
             # If room baseline is calibrated, subtract static multipath H_0
             if self.baseline_calibrated and self.baseline_subcarriers is not None:
@@ -376,6 +389,7 @@ class WiFiCsiDspEngine:
                     "subcarrier_ratio_cfo_cancelled": True,
                     "baseline_calibrated": self.baseline_calibrated,
                     "cardiac_snr_db": self.cardiac_snr_db,
+                    "phases_processed": bool(phases),
                 }
             }
 
@@ -388,7 +402,7 @@ class SensingState:
     """Thread-safe store for live CSI radar telemetry and classifications."""
 
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.source = "esp32"
         self.source_state = "live_verified"
         self.node_id = 1
@@ -413,6 +427,17 @@ class SensingState:
         self.last_packet_time = 0.0
         self.history_rssi: List[float] = []
 
+        # Phase and normalized subcarrier telemetry
+        self.phases: List[float] = [0.0] * 52
+        self.normalized_amplitudes: List[float] = [1.0] * 52
+        self.last_transport = "none"
+        self.last_protocol = "none"
+        self.last_port = "none"
+        self.last_baud: Optional[int] = None
+        self.last_snr_db = 45.0
+        self.packet_timestamps: deque = deque(maxlen=100)
+        self.last_dsp_latency_ms = 0.0
+
         # DSP engine & clinical triaging
         self.dsp_engine = WiFiCsiDspEngine()
         self.triage = {
@@ -431,6 +456,32 @@ class SensingState:
             "cardiac_snr_db": 14.5,
         }
 
+    def get_packet_rate_hz(self) -> float:
+        with self.lock:
+            if len(self.packet_timestamps) < 2:
+                return 0.0
+            dt = self.packet_timestamps[-1] - self.packet_timestamps[0]
+            if dt <= 0.001:
+                return 0.0
+            return round((len(self.packet_timestamps) - 1) / dt, 1)
+
+    def get_hardware_status(self) -> Dict[str, Any]:
+        with self.lock:
+            now = time.time()
+            is_active = (self.packets_received > 0) and (now - self.last_packet_time < 5.0)
+            return {
+                "connected": is_active,
+                "port": self.last_port if is_active else None,
+                "baud_rate": self.last_baud if is_active else None,
+                "packet_rate_hz": self.get_packet_rate_hz() if is_active else 0.0,
+                "snr_db": round(self.last_snr_db, 1) if is_active else 0.0,
+                "packets_received": self.packets_received,
+                "last_packet_time": self.last_packet_time,
+                "transport": self.last_transport if is_active else "none",
+                "protocol": self.last_protocol if is_active else "none",
+                "last_dsp_latency_ms": round(self.last_dsp_latency_ms, 3),
+            }
+
     def update_raw_csi(
         self,
         node_id: int,
@@ -442,10 +493,18 @@ class SensingState:
         noise: int,
         amplitudes: List[float],
         source_addr: str,
+        phases: Optional[List[float]] = None,
+        normalized_amplitudes: Optional[List[float]] = None,
+        transport: str = "udp",
+        protocol: str = "adr018_binary",
+        port: Optional[str] = None,
+        baud: Optional[int] = None,
     ):
         with self.lock:
+            now = time.time()
             self.packets_received += 1
-            self.last_packet_time = time.time()
+            self.last_packet_time = now
+            self.packet_timestamps.append(now)
             self.node_id = node_id
             self.n_antennas = n_ant
             self.n_subcarriers = n_sc
@@ -454,12 +513,28 @@ class SensingState:
             self.rssi_dbm = float(rssi)
             self.noise_floor_dbm = float(noise)
             self.source_addr = source_addr
+            self.last_snr_db = float(rssi - noise)
+            self.last_transport = transport
+            self.last_protocol = protocol
+            self.last_port = port or source_addr
+            self.last_baud = baud
 
             if amplitudes:
                 self.amplitudes = amplitudes
                 self.mean_amplitude = float(np.mean(amplitudes))
             else:
                 self.mean_amplitude = 10.0
+
+            if phases:
+                self.phases = phases
+            else:
+                self.phases = [0.0] * len(self.amplitudes)
+
+            if normalized_amplitudes:
+                self.normalized_amplitudes = normalized_amplitudes
+            else:
+                max_a = max(self.amplitudes) if self.amplitudes and max(self.amplitudes) > 0 else 1.0
+                self.normalized_amplitudes = [round(a / max_a, 4) for a in self.amplitudes]
 
             # Signal-derived motion & presence
             self.history_rssi.append(self.rssi_dbm)
@@ -480,6 +555,7 @@ class SensingState:
                 self.confidence = 0.88
 
             # Process through Tier 1-3 DSP engine
+            t_dsp_start = time.perf_counter()
             dsp_res = self.dsp_engine.process_csi_frame(
                 amplitudes=self.amplitudes,
                 rssi=self.rssi_dbm,
@@ -487,7 +563,9 @@ class SensingState:
                 motion_band=self.motion_band_power,
                 seq=self.sequence,
                 timestamp=self.last_packet_time,
+                phases=self.phases,
             )
+            self.last_dsp_latency_ms = (time.perf_counter() - t_dsp_start) * 1000.0
             self.heartrate_bpm = dsp_res["heart_rate_bpm"]
             self.breathing_rate_bpm = dsp_res["breathing_rate_bpm"]
             self.triage = dsp_res["triage"]
@@ -504,8 +582,10 @@ class SensingState:
         source_addr: str,
     ):
         with self.lock:
+            now = time.time()
             self.packets_received += 1
-            self.last_packet_time = time.time()
+            self.last_packet_time = now
+            self.packet_timestamps.append(now)
             self.node_id = node_id
             self.sequence = seq
             self.source_addr = source_addr
@@ -523,6 +603,7 @@ class SensingState:
             now = time.time()
             self.dsp_filtering["baseline_calibrated"] = self.dsp_engine.baseline_calibrated
             self.dsp_filtering["fan_filter_enabled"] = self.dsp_engine.fan_filter_enabled
+            hw_stat = self.get_hardware_status()
             # If no packet received recently, synthesize subtle natural rhythm
             if now - self.last_packet_time > 3.0:
                 t = now
@@ -545,6 +626,8 @@ class SensingState:
                     "noise_floor_dbm": -95.0,
                     "mean_amplitude": round(mean_amp, 2),
                     "amplitude": [round(a, 2) for a in amps],
+                    "phases": [round(p, 3) for p in self.phases[:56]],
+                    "normalized_amplitude": [round(a, 4) for a in self.normalized_amplitudes[:56]],
                     "source_addr": self.source_addr,
                     "presence": True,
                     "motion_level": "present_still",
@@ -558,6 +641,7 @@ class SensingState:
                     "last_packet_time": self.last_packet_time,
                     "triage": self.triage,
                     "dsp_filtering": self.dsp_filtering,
+                    "hardware": hw_stat,
                 }
 
             return {
@@ -573,6 +657,8 @@ class SensingState:
                 "noise_floor_dbm": round(self.noise_floor_dbm, 1),
                 "mean_amplitude": round(self.mean_amplitude, 2),
                 "amplitude": [round(a, 2) for a in self.amplitudes[:56]],
+                "phases": [round(p, 3) for p in self.phases[:56]],
+                "normalized_amplitude": [round(a, 4) for a in self.normalized_amplitudes[:56]],
                 "source_addr": self.source_addr,
                 "presence": self.presence,
                 "motion_level": self.motion_level,
@@ -586,6 +672,7 @@ class SensingState:
                 "last_packet_time": self.last_packet_time,
                 "triage": self.triage,
                 "dsp_filtering": self.dsp_filtering,
+                "hardware": hw_stat,
             }
 
     def get_vitals(self, node_id: int) -> Dict[str, Any]:
@@ -639,7 +726,7 @@ INVISIGUARD_FEATURE_COLS = [
 
 class InvisiGuardMLEngine:
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.recording_active = False
         self.recording_label = 0
         self.recording_class_name = "EMPTY_ROOM"
@@ -650,15 +737,53 @@ class InvisiGuardMLEngine:
         self.rssi_window: deque = deque(maxlen=10)
 
         self.model: Optional[Any] = None
+        self._fast_trees: List[Any] = []
         self.model_status = "idle"
         self.model_accuracy = 98.4
         self.model_last_trained: Optional[str] = None
         self._load_saved_model()
 
+    def _compile_fast_trees(self):
+        self._fast_trees = []
+        if self.model is not None and hasattr(self.model, "estimators_"):
+            try:
+                for est in self.model.estimators_:
+                    t = est.tree_
+                    self._fast_trees.append((
+                        t.children_left,
+                        t.children_right,
+                        t.feature,
+                        t.threshold,
+                        t.value,
+                    ))
+            except Exception as e:
+                logger.warning("Could not precompile fast trees: %s", e)
+                self._fast_trees = []
+
+    def _fast_predict_proba(self, x_vec: np.ndarray) -> np.ndarray:
+        if not self._fast_trees or not hasattr(self.model, "n_classes_"):
+            return self.model.predict_proba([x_vec])[0]
+        n_classes = self.model.n_classes_
+        total_val = np.zeros(n_classes, dtype=np.float64)
+        for left, right, feature, threshold, value in self._fast_trees:
+            node = 0
+            while left[node] != -1:
+                feat = feature[node]
+                if x_vec[feat] <= threshold[node]:
+                    node = left[node]
+                else:
+                    node = right[node]
+            total_val += value[node][0]
+        sum_val = np.sum(total_val)
+        if sum_val > 0:
+            return total_val / sum_val
+        return total_val
+
     def _load_saved_model(self):
         if INVISIGUARD_MODEL_PATH.exists():
             try:
                 self.model = joblib.load(INVISIGUARD_MODEL_PATH)
+                self._compile_fast_trees()
                 mtime = INVISIGUARD_MODEL_PATH.stat().st_mtime
                 self.model_last_trained = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
                 self.model_status = "active_deployed"
@@ -869,6 +994,7 @@ class InvisiGuardMLEngine:
 
         joblib.dump(clf, INVISIGUARD_MODEL_PATH)
         self.model = clf
+        self._compile_fast_trees()
         self.model_accuracy = test_acc
         self.model_last_trained = datetime.now(timezone.utc).isoformat()
         self.model_status = "active_deployed"
@@ -905,9 +1031,17 @@ class InvisiGuardMLEngine:
                 sc_entropy = 4.8
 
             cooler = float(sc_std / (motion + 0.01))
-            X_live = np.array([[rssi, 0.3, sc_mean, sc_std, sc_entropy, motion, breathing, variance, 0.5, cooler]])
-            pred_id = int(self.model.predict(X_live)[0])
-            proba = float(np.max(self.model.predict_proba(X_live)[0]))
+            x_feat = np.array([rssi, 0.3, sc_mean, sc_std, sc_entropy, motion, breathing, variance, 0.5, cooler], dtype=np.float64)
+            if self._fast_trees:
+                probas = self._fast_predict_proba(x_feat)
+                pred_id = int(np.argmax(probas))
+                proba = float(probas[pred_id])
+            else:
+                X_live = np.array([x_feat])
+                probas = self.model.predict_proba(X_live)[0]
+                pred_id = int(np.argmax(probas))
+                proba = float(probas[pred_id])
+
             return {
                 "class_id": pred_id,
                 "class_name": INVISIGUARD_CLASSES.get(pred_id, "UNKNOWN"),
@@ -984,92 +1118,85 @@ class Esp32UdpReceiver:
                     logger.debug("UDP recv error: %s", e)
 
     def _parse_packet(self, raw: bytes, addr_str: str):
-        if len(raw) < 20:
-            return
         try:
-            magic = struct.unpack_from("<I", raw, 0)[0]
+            parsed = UniversalCsiParser.parse(raw, source_addr=addr_str)
+            if not parsed:
+                return
 
-            if magic == self.MAGIC_RAW_CSI:
-                # ADR-018 Raw CSI
-                magic, node_id, n_ant, n_sc = struct.unpack_from("<IBBH", raw, 0)
-                
-                # Auto-detect synth-csi-udp format vs canonical ADR-018/ADR-110 hardware format
-                if len(raw) >= 20 and raw[16:20] == b"\x00\x00\x00\x00" and raw[14] != 0:
-                    freq_mhz = struct.unpack_from("<H", raw, 8)[0]
-                    seq = struct.unpack_from("<I", raw, 10)[0]
-                    rssi = struct.unpack_from("<b", raw, 14)[0]
-                    noise = struct.unpack_from("<b", raw, 15)[0]
-                else:
-                    freq_mhz, seq = struct.unpack_from("<II", raw, 8)
-                    rssi_u8, noise_u8 = struct.unpack_from("<BB", raw, 16)
-                    rssi = rssi_u8 if rssi_u8 < 128 else rssi_u8 - 256
-                    noise = noise_u8 if noise_u8 < 128 else noise_u8 - 256
-
-                iq_count = n_ant * n_sc
-                iq_bytes_needed = self.HEADER_SIZE + iq_count * 2
-                amps: List[float] = []
-
-                if len(raw) >= iq_bytes_needed and iq_count > 0:
-                    iq_raw = struct.unpack_from(f"<{iq_count * 2}b", raw, self.HEADER_SIZE)
-                    i_vals = np.array(iq_raw[0::2], dtype=np.float64)
-                    q_vals = np.array(iq_raw[1::2], dtype=np.float64)
-                    amplitudes = np.sqrt(i_vals**2 + q_vals**2)
-                    amps = amplitudes.tolist()
-
+            if parsed["type"] == "raw_csi":
                 global_state.update_raw_csi(
-                    node_id=node_id,
-                    n_ant=n_ant,
-                    n_sc=n_sc,
-                    freq_mhz=freq_mhz,
-                    seq=seq,
-                    rssi=rssi,
-                    noise=noise,
-                    amplitudes=amps,
+                    node_id=parsed["node_id"],
+                    n_ant=parsed["n_ant"],
+                    n_sc=parsed["n_sc"],
+                    freq_mhz=parsed["freq_mhz"],
+                    seq=parsed["seq"],
+                    rssi=parsed["rssi"],
+                    noise=parsed["noise"],
+                    amplitudes=parsed["amplitudes"],
+                    source_addr=addr_str,
+                    phases=parsed.get("phases"),
+                    normalized_amplitudes=parsed.get("normalized_amplitudes"),
+                    transport="udp",
+                    protocol=parsed.get("protocol", "adr018_binary"),
+                    port=f"UDP:{self.port}",
+                )
+            elif parsed["type"] == "vitals":
+                global_state.update_c6_feature(
+                    node_id=parsed["node_id"],
+                    seq=parsed["seq"],
+                    motion=parsed["motion"],
+                    presence=parsed["presence"],
+                    resp_bpm=parsed["resp_bpm"],
+                    hb_bpm=parsed["hb_bpm"],
                     source_addr=addr_str,
                 )
-
-            elif magic == self.MAGIC_VITALS and len(raw) >= 32:
-                # ADR-039 Vitals packet (<IBBHIbBxxffII)
-                fields = struct.unpack_from("<IBBHIbBxxffII", raw, 0)
-                node_id = fields[1]
-                br_raw = fields[3]
-                hr_raw = fields[4]
-                rssi = fields[5]
-                resp_bpm = float(br_raw) / 100.0 if br_raw > 0 else 16.0
-                hb_bpm = float(hr_raw) / 10000.0 if hr_raw > 0 else 72.0
-                motion = fields[7] if len(fields) > 7 else 0.1
-                presence_score = fields[8] if len(fields) > 8 else 0.85
+            elif parsed["type"] == "c6_feature":
                 global_state.update_c6_feature(
-                    node_id=node_id,
-                    seq=int(time.time() * 10) % 65535,
-                    motion=motion,
-                    presence=presence_score,
-                    resp_bpm=resp_bpm,
-                    hb_bpm=hb_bpm,
-                    source_addr=addr_str,
-                )
-
-            elif magic == self.MAGIC_C6_FEAT and len(raw) >= 60:
-                # ADR-081 C6 Feature State (60 bytes: magic, node, mode, seq, ts, 9 floats, qflags, rsvd, crc)
-                fields = struct.unpack_from("<IBBHQfffffffffHHI", raw, 0)
-                node_id = fields[1]
-                seq = fields[3]
-                motion = fields[5]
-                presence = fields[6]
-                resp_bpm = fields[7]
-                hb_bpm = fields[9]
-
-                global_state.update_c6_feature(
-                    node_id=node_id,
-                    seq=seq,
-                    motion=motion,
-                    presence=presence,
-                    resp_bpm=resp_bpm,
-                    hb_bpm=hb_bpm,
+                    node_id=parsed["node_id"],
+                    seq=parsed["seq"],
+                    motion=parsed["motion"],
+                    presence=parsed["presence"],
+                    resp_bpm=parsed["resp_bpm"],
+                    hb_bpm=parsed["hb_bpm"],
                     source_addr=addr_str,
                 )
         except Exception as e:
             logger.debug("Packet parse error: %s", e)
+
+
+def handle_serial_packet(parsed: Dict[str, Any]):
+    """Pipes decoded USB Serial frames into the DSP & ML pipeline."""
+    if parsed.get("type") == "raw_csi":
+        global_state.update_raw_csi(
+            node_id=parsed["node_id"],
+            n_ant=parsed["n_ant"],
+            n_sc=parsed["n_sc"],
+            freq_mhz=parsed["freq_mhz"],
+            seq=parsed["seq"],
+            rssi=parsed["rssi"],
+            noise=parsed["noise"],
+            amplitudes=parsed["amplitudes"],
+            source_addr=parsed.get("source_addr", "serial"),
+            phases=parsed.get("phases"),
+            normalized_amplitudes=parsed.get("normalized_amplitudes"),
+            transport="serial",
+            protocol=parsed.get("protocol", "esp_csi_csv"),
+            port=parsed.get("source_addr", "COM"),
+            baud=parsed.get("baud"),
+        )
+    elif parsed.get("type") in ("vitals", "c6_feature"):
+        global_state.update_c6_feature(
+            node_id=parsed["node_id"],
+            seq=parsed["seq"],
+            motion=parsed["motion"],
+            presence=parsed["presence"],
+            resp_bpm=parsed["resp_bpm"],
+            hb_bpm=parsed["hb_bpm"],
+            source_addr=parsed.get("source_addr", "serial"),
+        )
+
+
+usb_serial_scanner = UsbSerialScanner(on_packet_callback=handle_serial_packet)
 
 
 # ---------------------------------------------------------------------------
@@ -1136,6 +1263,8 @@ def build_sensing_update_message(snap: Dict[str, Any]) -> str:
                 "freq_mhz": snap["freq_mhz"],
                 "sequence": snap["sequence"],
                 "source_addr": snap["source_addr"],
+                "phase": snap.get("phases", []),
+                "normalized_amplitude": snap.get("normalized_amplitude", []),
             }
         ],
         "features": {
@@ -1193,6 +1322,10 @@ def build_sensing_update_message(snap: Dict[str, Any]) -> str:
             }
         ] if snap["presence"] else [],
         "signal_field": signal_field,
+        "source_state": "live" if snap["packets_received"] > 0 else "disconnected",
+        "packets_received": snap["packets_received"],
+        "nodes_count": 1 if snap["packets_received"] > 0 else 0,
+        "hardware": snap.get("hardware", global_state.get_hardware_status()),
     }
     return json.dumps(msg)
 
@@ -1423,6 +1556,15 @@ def create_app(ui_directory: Path) -> FastAPI:
         else:
             src_state = "disconnected"
             nodes = 0
+        hw = global_state.get_hardware_status()
+        ser_stat = usb_serial_scanner.get_status()
+        if ser_stat["connected"]:
+            hw["port"] = ser_stat["port"]
+            hw["baud_rate"] = ser_stat["baud_rate"]
+            hw["packet_rate_hz"] = ser_stat["packet_rate_hz"]
+            hw["snr_db"] = ser_stat["snr_db"]
+            hw["transport"] = "serial"
+            hw["connected"] = True
         return {
             "ok": True,
             "status": "ok",
@@ -1434,9 +1576,37 @@ def create_app(ui_directory: Path) -> FastAPI:
             "packets_received": pkts,
             "clients": broadcaster.total_clients,
             "last_packet_age_s": round(now - last_t, 1) if last_t > 0 else None,
+            "hardware": hw,
         }
 
     # 2. Status & Info
+    @app.get("/api/v1/hardware/status")
+    @app.get("/api/v1/invisiguard/hardware/status")
+    async def api_hardware_status():
+        hw = global_state.get_hardware_status()
+        ser_stat = usb_serial_scanner.get_status()
+        if ser_stat["connected"]:
+            hw["port"] = ser_stat["port"]
+            hw["baud_rate"] = ser_stat["baud_rate"]
+            hw["packet_rate_hz"] = ser_stat["packet_rate_hz"]
+            hw["snr_db"] = ser_stat["snr_db"]
+            hw["transport"] = "serial"
+            hw["connected"] = True
+        return {
+            "status": "connected" if hw["connected"] else "scanning",
+            "connected": hw["connected"],
+            "port": hw["port"],
+            "baud_rate": hw["baud_rate"],
+            "packet_rate_hz": hw["packet_rate_hz"],
+            "snr_db": hw["snr_db"],
+            "packets_received": hw["packets_received"],
+            "last_packet_time": hw["last_packet_time"],
+            "transport": hw["transport"],
+            "protocol": hw["protocol"],
+            "last_dsp_latency_ms": hw.get("last_dsp_latency_ms", 0.0),
+            "scanned_ports": ser_stat["scanned_ports"],
+        }
+
     @app.get("/api/v1/status")
     async def api_status():
         snap = global_state.get_snapshot()
@@ -1452,6 +1622,15 @@ def create_app(ui_directory: Path) -> FastAPI:
         else:
             src_state = "disconnected"
             nodes = 0
+        hw = global_state.get_hardware_status()
+        ser_stat = usb_serial_scanner.get_status()
+        if ser_stat["connected"]:
+            hw["port"] = ser_stat["port"]
+            hw["baud_rate"] = ser_stat["baud_rate"]
+            hw["packet_rate_hz"] = ser_stat["packet_rate_hz"]
+            hw["snr_db"] = ser_stat["snr_db"]
+            hw["transport"] = "serial"
+            hw["connected"] = True
         return {
             "status": "online",
             "source": "esp32",
@@ -1461,6 +1640,7 @@ def create_app(ui_directory: Path) -> FastAPI:
             "packets_received": pkts,
             "last_packet_time": snap["timestamp"],
             "last_packet_age_s": round(now - last_t, 1) if last_t > 0 else None,
+            "hardware": hw,
         }
 
     @app.get("/api/v1/info")
@@ -2230,6 +2410,9 @@ async def run_servers(
     udp_recv = Esp32UdpReceiver(bind_addr=host, port=udp_port)
     udp_recv.start()
 
+    # 1b. Start USB Serial COM auto-scanner
+    usb_serial_scanner.start()
+
     # 2. Build FastAPI app
     app = create_app(ui_dir)
 
@@ -2274,6 +2457,7 @@ async def run_servers(
     if ws_port != http_port:
         print(f"  - WS (Docker):  ws://localhost:{ws_port}/ws/sensing")
     print(f"  - ESP32 UDP:    udp://{host}:{udp_port}")
+    print("  - USB Serial:   Auto-scanning (115200 & 921600 baud)")
     print("=" * 65 + "\n", flush=True)
 
     try:
@@ -2290,6 +2474,7 @@ async def run_servers(
         if legacy_ws_server:
             legacy_ws_server.close()
             await legacy_ws_server.wait_closed()
+        usb_serial_scanner.stop()
         udp_recv.stop()
 
 

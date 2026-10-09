@@ -1167,10 +1167,23 @@ class InvisiGuardApp {
     try {
       this.ws = new WebSocket(`ws://${host}:3000/ws/sensing`);
       this.ws.onmessage = (evt) => {
-        if (this.mode !== 'live') return;
         try {
           const msg = JSON.parse(evt.data);
-          if (msg.type === 'sensing_update') this._handleLiveFrame(msg);
+          if (msg.type === 'sensing_update') {
+            // Auto-transition from Demo or Disconnected to Live CSI within 500ms of first physical packet
+            if (msg.packets_received > 0) {
+              if (this.mode === 'demo') {
+                this.mode = 'live';
+                if (this.sourceLabel) this.sourceLabel.textContent = 'Live Hardware';
+              }
+              this.state.sourceState = 'live';
+              this.state.nodes = 1;
+              this.state.packets = msg.packets_received;
+            }
+            if (this.mode === 'live') {
+              this._handleLiveFrame(msg);
+            }
+          }
         } catch (e) {}
       };
       this.ws.onclose = () => setTimeout(() => this._connectWs(), 2000);
@@ -1183,6 +1196,17 @@ class InvisiGuardApp {
     const feat = msg.features || {};
     const cls = msg.classification || {};
     const vit = msg.vital_signs || {};
+
+    if (typeof msg.packets_received === 'number') {
+      this.state.packets = msg.packets_received;
+    }
+    if (this.state.packets > 0) {
+      this.state.sourceState = 'live';
+      this.state.nodes = 1;
+    }
+    if (msg.hardware) {
+      this.state.hardware = msg.hardware;
+    }
 
     const isLive = (this.state.sourceState === 'live' && this.state.nodes > 0);
     this.state.presence = isLive ? (cls.presence || false) : false;
@@ -1368,7 +1392,7 @@ class InvisiGuardApp {
       this.statusDot.className = 'status-dot demo';
       this.statusLabel.textContent = `DEMO SIMULATION (${this.state.packets} PKTS)`;
     } else {
-      if (this.state.sourceState === 'live' && this.state.nodes > 0) {
+      if ((this.state.sourceState === 'live' || this.state.packets > 0) && this.state.nodes > 0) {
         this.statusDot.className = 'status-dot live';
         this.statusLabel.textContent = `LIVE CSI · 1 NODE (${this.state.packets} PKTS)`;
       } else {

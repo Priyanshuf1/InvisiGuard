@@ -982,10 +982,22 @@ class BedroomObservatoryApp {
     try {
       this.ws = new WebSocket(`ws://${host}:3000/ws/sensing`);
       this.ws.onmessage = (evt) => {
-        if (this.mode !== 'live') return;
         try {
           const msg = JSON.parse(evt.data);
-          if (msg.type === 'sensing_update') this._handleLiveFrame(msg);
+          if (msg.type === 'sensing_update') {
+            if (msg.packets_received > 0) {
+              if (this.mode === 'demo') {
+                this.mode = 'live';
+                if (this.sourceLabel) this.sourceLabel.textContent = 'Live Hardware';
+              }
+              this.telemetry.sourceState = 'live';
+              this.telemetry.nodes = 1;
+              this.telemetry.packets = msg.packets_received;
+            }
+            if (this.mode === 'live') {
+              this._handleLiveFrame(msg);
+            }
+          }
         } catch (e) {}
       };
       this.ws.onclose = () => setTimeout(() => this._connectWs(), 2000);
@@ -998,6 +1010,14 @@ class BedroomObservatoryApp {
     const feat = msg.features || {};
     const cls = msg.classification || {};
     const vit = msg.vital_signs || {};
+
+    if (typeof msg.packets_received === 'number') {
+      this.telemetry.packets = msg.packets_received;
+    }
+    if (this.telemetry.packets > 0) {
+      this.telemetry.sourceState = 'live';
+      this.telemetry.nodes = 1;
+    }
 
     const isLive = (this.telemetry.sourceState === 'live' && this.telemetry.nodes > 0);
     this.telemetry.presence = isLive ? (cls.presence || false) : false;
@@ -1115,7 +1135,7 @@ class BedroomObservatoryApp {
       this.connDot.className = 'dot dot--demo';
       this.connLabel.textContent = `DEMO SIMULATION (${this.telemetry.packets} PKTS)`;
     } else {
-      if (this.telemetry.sourceState === 'live' && this.telemetry.nodes > 0) {
+      if ((this.telemetry.sourceState === 'live' || this.telemetry.packets > 0) && this.telemetry.nodes > 0) {
         this.connDot.className = 'dot dot--live';
         this.connLabel.textContent = `LIVE CSI · 1 NODE (${this.telemetry.packets} PKTS)`;
       } else {

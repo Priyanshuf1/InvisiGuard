@@ -784,11 +784,20 @@ class InvisiGuardApp {
       };
 
       this.ws.onmessage = (evt) => {
-        if (this.mode !== 'live') return;
         try {
           const msg = JSON.parse(evt.data);
           if (msg.type === 'sensing_update') {
-            this._handleLiveTelemetry(msg);
+            if (msg.packets_received > 0) {
+              if (this.mode === 'demo') {
+                this.mode = 'live';
+              }
+              this.state.sourceState = 'live';
+              this.state.nodes = 1;
+              this.state.packets = msg.packets_received;
+            }
+            if (this.mode === 'live') {
+              this._handleLiveTelemetry(msg);
+            }
           }
         } catch (e) {}
       };
@@ -813,8 +822,16 @@ class InvisiGuardApp {
     const cls = msg.classification || {};
     const vit = msg.vital_signs || {};
 
+    if (typeof msg.packets_received === 'number') {
+      this.state.packets = msg.packets_received;
+    }
+    if (this.state.packets > 0) {
+      this.state.sourceState = 'live';
+      this.state.nodes = 1;
+    }
+
     // In live mode, only report presence if active hardware is sending packets
-    const isLive = this.state.sourceState === 'live' && this.state.nodes > 0;
+    const isLive = (this.state.sourceState === 'live' || this.state.packets > 0) && this.state.nodes > 0;
 
     this.state.presence = isLive ? (cls.presence || false) : false;
     this.state.fallDetected = isLive ? (cls.fall_detected || false) : false;
@@ -870,9 +887,9 @@ class InvisiGuardApp {
       this.nodeNum.textContent = '1';
       this.pktNum.textContent = String(this.state.packets);
     } else {
-      if (this.state.sourceState === 'live' && this.state.nodes > 0) {
+      if ((this.state.sourceState === 'live' || this.state.packets > 0) && this.state.nodes > 0) {
         this.connDot.className = 'dot dot--live';
-        this.connLabel.textContent = 'LIVE CSI';
+        this.connLabel.textContent = `LIVE CSI · 1 NODE (${this.state.packets} PKTS)`;
         this.nodeNum.textContent = String(this.state.nodes);
         this.pktNum.textContent = String(this.state.packets);
       } else if (this.state.sourceState === 'idle') {
