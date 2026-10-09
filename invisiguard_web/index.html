@@ -268,50 +268,190 @@
     </section>
 
     <!-- ========================================================
-         TAB 5: ML Training Studio
+         TAB 5: ML Training Studio (Daily Re-calibration & Real ML)
          ======================================================== -->
     <section class="section-pane" id="pane-ml">
       <div class="section-container">
-        <div class="section-header">
-          <h2 class="section-title">Machine Learning Model Studio</h2>
-          <p class="section-subtitle">Record labeled CSI frames from the live ESP32 and train the Random Forest event classifier.</p>
+        <div class="section-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="section-title">Hostel CSI AI Studio &amp; Daily Model Training</h2>
+            <p class="section-subtitle">Calibrate empty bedroom baseline reflections, collect labeled human activity frames, and train the production Random Forest classifier daily.</p>
+          </div>
+          <div style="text-align: right;">
+            <span class="status-badge" style="font-size: 11px;">
+              <span class="status-dot live"></span>
+              <span id="ml-active-model-badge">Model: Active &middot; 100.0% Validation Accuracy</span>
+            </span>
+          </div>
         </div>
 
+        <!-- Real-Time Recording Banner -->
+        <div id="ml-record-banner" class="ui-card" style="margin-bottom: 20px; display: none; background: rgba(255, 64, 96, 0.08); border-color: rgba(255, 64, 96, 0.4);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span class="rec-pulsing-badge">● RECORDING IN PROGRESS</span>
+              <span style="font-size: 13px; font-weight: 600; color: #fff;">Class: <span id="banner-rec-class">EMPTY_ROOM</span></span>
+              <span style="font-size: 12px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;">Frames: <strong id="banner-rec-frames" style="color: var(--terra-pale);">0</strong></span>
+            </div>
+            <button id="btn-banner-stop" class="btn-danger" style="padding: 6px 16px;">■ Stop Recording &amp; Save</button>
+          </div>
+        </div>
+
+        <!-- 5 Interactive Class Recorders -->
+        <div class="class-rec-grid">
+          <!-- Class 0: Empty Room -->
+          <div class="class-rec-card" style="border-color: rgba(245, 192, 122, 0.4);">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">🚪 0: Empty Bedroom</span>
+                <span class="class-card-count" id="count-class-0">--</span>
+              </div>
+              <div class="class-card-desc">Zero-motion multipath reference. Filters stationary furniture and wall reflections.</div>
+            </div>
+            <div>
+              <button id="btn-calib-empty" class="btn-rec-calib" style="margin-bottom: 8px;" title="Give 20 seconds to step outside and close the door">
+                ⏳ Calibrate Empty Room (20s Countdown)
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="0" data-name="EMPTY_ROOM">▶ Start</button>
+                <button class="btn-rec-stop" data-class="0" disabled>■ Stop</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Class 1: Studying -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">📖 1: Desk Study</span>
+                <span class="class-card-count" id="count-class-1">--</span>
+              </div>
+              <div class="class-card-desc">Seated student typing, reading, and gentle breathing micro-movements.</div>
+            </div>
+            <div class="class-card-btns">
+              <button class="btn-rec-start" data-class="1" data-name="NORMAL_STUDYING">▶ Record</button>
+              <button class="btn-rec-stop" data-class="1" disabled>■ Stop</button>
+            </div>
+          </div>
+
+          <!-- Class 2: Walking -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">🚶 2: Room Pacing</span>
+                <span class="class-card-count" id="count-class-2">--</span>
+              </div>
+              <div class="class-card-desc">Continuous bipedal movement across the bedroom floor plane.</div>
+            </div>
+            <div class="class-card-btns">
+              <button class="btn-rec-start" data-class="2" data-name="WALKING">▶ Record</button>
+              <button class="btn-rec-stop" data-class="2" disabled>■ Stop</button>
+            </div>
+          </div>
+
+          <!-- Class 3: Violent Struggle -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">⚡ 3: Struggle / Ragging</span>
+                <span class="class-card-count" id="count-class-3">--</span>
+              </div>
+              <div class="class-card-desc">Fast multi-limb struggle, sudden directional changes, and high-frequency Doppler spikes.</div>
+            </div>
+            <div class="class-card-btns">
+              <button class="btn-rec-start" data-class="3" data-name="VIOLENT_STRUGGLE">▶ Record</button>
+              <button class="btn-rec-stop" data-class="3" disabled>■ Stop</button>
+            </div>
+          </div>
+
+          <!-- Class 4: Fall Event -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">🚨 4: Sudden Fall</span>
+                <span class="class-card-count" id="count-class-4">--</span>
+              </div>
+              <div class="class-card-desc">Vertical velocity drop followed by floor stillness and micro-breathing.</div>
+            </div>
+            <div class="class-card-btns">
+              <button class="btn-rec-start" data-class="4" data-name="FALL_EVENT">▶ Record</button>
+              <button class="btn-rec-stop" data-class="4" disabled>■ Stop</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dataset Balance Bar -->
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title">Dataset Balance &amp; Diversity</span>
+            <span class="card-badge" id="badge-total-samples">Total: -- Frames</span>
+          </div>
+          <div class="dataset-bar-wrap">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">
+              <span>Distribution across classes (Need &ge; 20 frames each)</span>
+              <span id="label-dataset-status">Checking balance...</span>
+            </div>
+            <div class="dataset-bar">
+              <div id="bar-seg-0" class="dataset-bar-seg" style="width: 20%; background: #F5C07A;" title="0: Empty"></div>
+              <div id="bar-seg-1" class="dataset-bar-seg" style="width: 20%; background: #00d878;" title="1: Study"></div>
+              <div id="bar-seg-2" class="dataset-bar-seg" style="width: 20%; background: #38bdf8;" title="2: Walk"></div>
+              <div id="bar-seg-3" class="dataset-bar-seg" style="width: 20%; background: #f59e0b;" title="3: Struggle"></div>
+              <div id="bar-seg-4" class="dataset-bar-seg" style="width: 20%; background: #ff4060;" title="4: Fall"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Model Training & Live Pipeline Grid -->
         <div class="card-grid-2">
+          <!-- Daily Training Engine -->
           <div class="ui-card">
             <div class="card-header">
-              <span class="card-title">Dataset Collection &amp; Classes</span>
-              <span class="card-badge">5 Classes</span>
+              <span class="card-title">Model Training Engine (Daily Retraining)</span>
+              <span class="card-badge">RandomForest (100 Trees)</span>
             </div>
             <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
-              Collect 10-feature CSI vectors (mean RSSI, variance, motion band power, breathing ratio, cooler noise ratio).
+              Train the 10-feature scikit-learn classifier with cooler motor noise rejection directly on your local sensing backend.
             </p>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
-              <button class="btn-secondary">0: Empty Room</button>
-              <button class="btn-secondary">1: Standing / Normal</button>
-              <button class="btn-secondary">2: Pacing / Walking</button>
-              <button class="btn-secondary">3: Violent Struggle</button>
-              <button class="btn-secondary">4: Fall Event</button>
+            <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+              <button id="btn-start-train" class="btn-primary" style="flex: 1;">
+                ⚡ Train Production Model (Daily Calibration)
+              </button>
             </div>
-            <div style="font-size: 11px; color: var(--text-label);">Benchmark Dataset: 300 verified frames loaded</div>
+            <div class="terminal-log" id="train-terminal-log">
+              [SYSTEM] InvisiGuard ML Engine ready.<br>
+              [DATA] Benchmark dataset loaded: 10 features &times; 5 classes.<br>
+              [HOT-RELOAD] Models are automatically hot-reloaded into live radar inference.
+            </div>
           </div>
 
+          <!-- Live Model Inference Verification -->
           <div class="ui-card">
             <div class="card-header">
-              <span class="card-title">Model Training Engine</span>
-              <span class="card-badge">RandomForest</span>
+              <span class="card-title">Live Model Prediction (Real-Time Ingestion)</span>
+              <span class="card-badge" id="live-pred-badge">Active</span>
             </div>
-            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
-              Train the scikit-learn classifier directly on the local sensing server backend.
-            </p>
-            <button id="btn-start-train" class="btn-primary" style="margin-bottom: 12px;">
-              Train Model (RandomForest)
-            </button>
-            <div id="train-status-msg" style="font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--terra-sun);">
-              Model Ready &middot; 100% Validation Accuracy
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Detected Behavior Class</div>
+              <div style="font-size: 24px; font-weight: 800; color: var(--green-bright); font-family: 'JetBrains Mono', monospace;" id="live-pred-class">
+                NORMAL_STUDYING
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 10px; color: var(--text-label);">CLASSIFICATION CONFIDENCE</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--terra-pale);" id="live-pred-conf">98%</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 10px; color: var(--text-label);">FAN NOISE REJECTION</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--green-bright);">SUPPRESSED</div>
+              </div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">
+              InvisiGuard uses spectral entropy &amp; subcarrier dispersion to decouple electric ceiling fan or cooler noise from true human respiration and movement.
             </div>
           </div>
         </div>
+
       </div>
     </section>
 
@@ -350,6 +490,42 @@
     </section>
 
   </main>
+
+  <!-- 20-Second Empty Bedroom Calibration Modal -->
+  <div id="calibration-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-badge">ROOM BASELINE CALIBRATION</div>
+      <h3 class="modal-title" id="calib-modal-title">Please Exit the Bedroom Now</h3>
+      <p class="modal-desc" id="calib-modal-desc">
+        Step outside and close the bedroom door. Baseline recording will begin in 20 seconds to establish zero-human multipath reference.
+      </p>
+
+      <div class="countdown-circle-wrap" id="calib-countdown-wrap">
+        <svg class="countdown-svg" viewBox="0 0 120 120">
+          <circle class="countdown-bg" cx="60" cy="60" r="54"></circle>
+          <circle class="countdown-progress" id="countdown-progress-ring" cx="60" cy="60" r="54"></circle>
+        </svg>
+        <div class="countdown-inner">
+          <div class="countdown-number" id="countdown-number">20</div>
+          <div class="countdown-unit">SECONDS</div>
+        </div>
+      </div>
+
+      <div id="calib-recording-state" style="display: none; margin: 16px 0;">
+        <div class="rec-pulsing-badge">● RECORDING ZERO-MOTION BASELINE</div>
+        <div class="rec-metric-row">
+          <span>Frames Captured: <strong id="modal-rec-samples" style="color: var(--terra-sun);">0</strong></span> &middot;
+          <span>Multipath Var: <strong id="modal-rec-var" style="color: var(--green-bright);">0.18</strong></span>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-skip-countdown" class="btn-primary">⚡ Start Recording Now</button>
+        <button id="btn-stop-calibration" class="btn-danger" style="display: none;">■ Stop &amp; Save Baseline</button>
+        <button id="btn-cancel-calibration" class="btn-secondary">✕ Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Three.js CDN with Importmap -->
   <script type="importmap">

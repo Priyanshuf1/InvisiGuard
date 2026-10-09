@@ -587,6 +587,312 @@ canvas.metric-canvas {
   color: var(--text-primary);
 }
 
+/* ============================================================
+   Section 5: ML Studio & Calibration Modal
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 6, 5, 0.88);
+  backdrop-filter: blur(12px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-card {
+  background: #14100e;
+  border: 1px solid var(--terra-base);
+  border-radius: 16px;
+  padding: 32px 28px;
+  max-width: 460px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(196, 118, 107, 0.15);
+  animation: fadeIn 0.25s ease;
+}
+
+.modal-badge {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--terra-sun);
+  background: rgba(245, 192, 122, 0.12);
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -0.3px;
+}
+
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.countdown-circle-wrap {
+  position: relative;
+  width: 130px;
+  height: 130px;
+  margin: 0 auto 24px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.countdown-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.countdown-bg {
+  fill: none;
+  stroke: rgba(196, 118, 107, 0.15);
+  stroke-width: 8;
+}
+
+.countdown-progress {
+  fill: none;
+  stroke: var(--terra-base);
+  stroke-width: 8;
+  stroke-dasharray: 339.29;
+  stroke-dashoffset: 0;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease;
+}
+
+.countdown-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.countdown-number {
+  font-size: 44px;
+  font-weight: 800;
+  color: var(--terra-pale);
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1;
+}
+
+.countdown-unit {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--text-label);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.rec-pulsing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--red-alert);
+  background: rgba(255, 64, 96, 0.12);
+  border: 1px solid rgba(255, 64, 96, 0.35);
+  padding: 6px 14px;
+  border-radius: 20px;
+  animation: pulse-rec 1s ease infinite;
+}
+
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.98); }
+}
+
+.rec-metric-row {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.btn-danger {
+  background: var(--red-alert);
+  color: #fff;
+  border: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-danger:hover {
+  background: #ff254d;
+}
+
+.class-rec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.class-rec-card {
+  background: var(--bg-card);
+  border: 1px solid var(--bg-border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: border-color 0.2s;
+}
+
+.class-rec-card:hover {
+  border-color: var(--terra-base);
+}
+
+.class-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.class-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.class-card-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  background: rgba(196, 118, 107, 0.15);
+  color: var(--terra-pale);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.class-card-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 14px;
+  min-height: 32px;
+}
+
+.class-card-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-rec-start {
+  flex: 1;
+  background: rgba(0, 216, 120, 0.12);
+  border: 1px solid rgba(0, 216, 120, 0.35);
+  color: var(--green-bright);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-rec-start:hover {
+  background: rgba(0, 216, 120, 0.25);
+}
+
+.btn-rec-stop {
+  flex: 1;
+  background: rgba(255, 64, 96, 0.12);
+  border: 1px solid rgba(255, 64, 96, 0.35);
+  color: var(--red-alert);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-rec-stop:hover {
+  background: rgba(255, 64, 96, 0.25);
+}
+
+.btn-rec-calib {
+  width: 100%;
+  background: rgba(245, 192, 122, 0.12);
+  border: 1px solid rgba(245, 192, 122, 0.35);
+  color: var(--terra-sun);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 9px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-rec-calib:hover {
+  background: rgba(245, 192, 122, 0.25);
+}
+
+.dataset-bar-wrap {
+  margin: 16px 0;
+}
+
+.dataset-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  margin-top: 6px;
+}
+
+.dataset-bar-seg {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.terminal-log {
+  background: #080605;
+  border: 1px solid rgba(196, 118, 107, 0.2);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--terra-pale);
+  max-height: 140px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .site-header { padding: 0 16px; }
