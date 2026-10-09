@@ -1,0 +1,658 @@
+/* ============================================================
+   InvisiGuard Bedroom Sensing Observatory — Luxury Cinematic CSS
+   Palette: Terracotta Dark + Electric Green Cybernetic Wireframe
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Warm Dark Canvas */
+  --bg-deep:         #0a0807;
+  --bg-panel:        rgba(18, 14, 13, 0.82);
+  --bg-panel-border: rgba(196, 118, 107, 0.22);
+  --bg-btn:          rgba(28, 22, 20, 0.75);
+  --bg-btn-hover:    rgba(196, 118, 107, 0.2);
+
+  /* Terracotta System */
+  --terra-base:      #C4766B;
+  --terra-dark:      #A85F55;
+  --terra-mid:       #D4897E;
+  --terra-light:     #E8A898;
+  --terra-pale:      #EFC0B5;
+  --terra-sun:       #F5C07A;
+
+  /* RuView Electric Green Accent */
+  --green-glow:      #00d878;
+  --green-bright:    #3eff8a;
+  --green-dim:       #0a6b3a;
+
+  /* Telemetry Status */
+  --amber-warn:      #E5A24D;
+  --red-alert:       #FF4060;
+  --grey-inactive:   #68605c;
+
+  /* Typography */
+  --text-primary:    #EDE6E0;
+  --text-secondary:  rgba(237, 230, 224, 0.65);
+  --text-label:      rgba(237, 230, 224, 0.42);
+  --text-mono:       #D4897E;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-deep);
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+#scene-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  cursor: grab;
+}
+
+#scene-canvas:active {
+  cursor: grabbing;
+}
+
+/* ============================================================
+   HUD Container
+   ============================================================ */
+#hud {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Enable pointer events on interactive UI */
+#top-nav, .floating-panel, #bottom-bar, #settings-modal, #fall-banner {
+  pointer-events: auto;
+}
+
+/* ============================================================
+   Top Navigation / Action Bar (Clean, Uncluttered, Spacious)
+   ============================================================ */
+#top-nav {
+  position: absolute;
+  top: 18px;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  z-index: 20;
+}
+
+/* Brand */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  user-select: none;
+}
+
+.brand-logo {
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--text-primary);
+  letter-spacing: -0.4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-shadow: 0 0 20px rgba(196, 118, 107, 0.3);
+}
+
+.brand-icon {
+  color: var(--terra-base);
+  font-size: 22px;
+}
+
+.brand-tag {
+  font-size: 10px;
+  color: var(--text-label);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  border-left: 1px solid rgba(196, 118, 107, 0.25);
+  padding-left: 10px;
+  margin-left: 4px;
+}
+
+/* Nav Controls (Center) */
+.nav-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Scenario Select */
+.scenario-select-wrap select {
+  background: var(--bg-panel);
+  border: 1px solid var(--bg-panel-border);
+  color: var(--terra-pale);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  outline: none;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: all 0.2s ease;
+}
+
+.scenario-select-wrap select:hover {
+  border-color: var(--terra-base);
+  color: var(--text-primary);
+}
+
+/* Connection Badge */
+.conn-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--bg-panel-border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  backdrop-filter: blur(12px);
+}
+
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot--live {
+  background: var(--green-glow);
+  box-shadow: 0 0 8px rgba(0, 216, 120, 0.8);
+  animation: pulse-dot 1.5s ease infinite;
+}
+
+.dot--demo {
+  background: var(--terra-sun);
+  box-shadow: 0 0 8px rgba(245, 192, 122, 0.6);
+}
+
+.dot--disconnected {
+  background: var(--grey-inactive);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.65; }
+}
+
+/* Nav Actions (Right: Separate Buttons) */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-btn {
+  background: var(--bg-btn);
+  border: 1px solid var(--bg-panel-border);
+  color: var(--text-secondary);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(10px);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-btn:hover {
+  background: var(--bg-btn-hover);
+  color: var(--text-primary);
+  border-color: var(--terra-base);
+}
+
+.nav-btn.active {
+  background: rgba(196, 118, 107, 0.25);
+  color: var(--terra-pale);
+  border-color: var(--terra-base);
+  box-shadow: 0 0 12px rgba(196, 118, 107, 0.25);
+}
+
+.nav-btn.icon-only {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  font-size: 14px;
+  border-radius: 50%;
+}
+
+.btn-icon {
+  font-size: 12px;
+  color: var(--terra-base);
+}
+
+/* ============================================================
+   Floating Drawers / Panels (Open on demand)
+   ============================================================ */
+.floating-panel {
+  position: absolute;
+  top: 76px;
+  width: 250px;
+  padding: 18px;
+  background: var(--bg-panel);
+  border: 1px solid var(--bg-panel-border);
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.floating-panel.hidden {
+  opacity: 0;
+  transform: translateY(-12px);
+  pointer-events: none !important;
+}
+
+#panel-vitals {
+  left: 24px;
+}
+
+#panel-telemetry {
+  right: 24px;
+}
+
+/* Panel Header */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(196, 118, 107, 0.12);
+  padding-bottom: 8px;
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--terra-mid);
+}
+
+.panel-close {
+  background: transparent;
+  border: none;
+  color: var(--text-label);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color 0.15s;
+}
+
+.panel-close:hover {
+  color: var(--text-primary);
+}
+
+/* Vitals Rows */
+.vital-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.vital-icon {
+  font-size: 16px;
+  color: var(--terra-base);
+  width: 20px;
+  text-align: center;
+}
+
+.vital-info {
+  flex: 1;
+}
+
+.vital-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-label);
+}
+
+.vital-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.vital-unit {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.vital-bar {
+  height: 3px;
+  background: rgba(196, 118, 107, 0.15);
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.vital-bar-fill {
+  height: 100%;
+  background: var(--terra-base);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.35s ease;
+}
+
+.bar-conf {
+  background: var(--green-glow);
+}
+
+/* ECG Container */
+.ecg-box {
+  margin: 10px 0 6px 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(196, 118, 107, 0.12);
+  border-radius: 8px;
+}
+
+.ecg-box-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-label);
+  margin-bottom: 4px;
+}
+
+#ecg-canvas {
+  width: 100%;
+  height: 36px;
+  display: block;
+}
+
+.vital-subtext {
+  font-size: 9px;
+  color: var(--text-label);
+  font-style: italic;
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* Telemetry Rows */
+.tel-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(196, 118, 107, 0.08);
+}
+
+.tel-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-label);
+}
+
+.tel-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-mono);
+  font-weight: 500;
+}
+
+.spark-box {
+  margin-top: 10px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(196, 118, 107, 0.12);
+  border-radius: 8px;
+}
+
+.spark-box-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-label);
+  margin-bottom: 4px;
+}
+
+#spark-canvas {
+  width: 100%;
+  height: 38px;
+  display: block;
+}
+
+/* Presence State */
+.presence-pill {
+  margin-top: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
+}
+
+.presence--absent {
+  background: rgba(104, 96, 92, 0.15);
+  color: var(--grey-inactive);
+  border: 1px solid rgba(104, 96, 92, 0.25);
+}
+
+.presence--present {
+  background: rgba(0, 216, 120, 0.15);
+  color: var(--green-bright);
+  border: 1px solid rgba(0, 216, 120, 0.35);
+}
+
+.presence--still {
+  background: rgba(196, 118, 107, 0.15);
+  color: var(--terra-light);
+  border: 1px solid rgba(196, 118, 107, 0.3);
+}
+
+/* Fall Alert Banner */
+#fall-banner {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 24px;
+  background: rgba(255, 64, 96, 0.2);
+  border: 1px solid rgba(255, 64, 96, 0.65);
+  border-radius: 24px;
+  color: var(--red-alert);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 24px rgba(255, 64, 96, 0.35);
+  animation: pulse-alert 0.8s ease infinite;
+  display: none;
+  z-index: 30;
+}
+
+@keyframes pulse-alert {
+  0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.6; transform: translateX(-50%) scale(1.03); }
+}
+
+/* ============================================================
+   Settings Dialog (Tabbed Modal)
+   ============================================================ */
+#settings-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 440px;
+  background: var(--bg-panel);
+  border: 1px solid var(--bg-panel-border);
+  border-radius: 18px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  padding: 24px;
+  z-index: 50;
+  display: none;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--terra-pale);
+  letter-spacing: 0.5px;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-label);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid rgba(196, 118, 107, 0.15);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab-btn.active {
+  background: rgba(196, 118, 107, 0.2);
+  color: var(--terra-pale);
+}
+
+.tab-pane {
+  display: none;
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.setting-row input[type="range"] {
+  width: 140px;
+  accent-color: var(--terra-base);
+}
+
+.setting-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--terra-sun);
+  width: 36px;
+  text-align: right;
+}
+
+/* ============================================================
+   Bottom Bar
+   ============================================================ */
+#bottom-bar {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 18px;
+  background: var(--bg-panel);
+  border: 1px solid var(--bg-panel-border);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.bottom-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.tag-dot {
+  color: var(--terra-base);
+  font-size: 10px;
+}
+
+.bottom-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(196, 118, 107, 0.2);
+}
+
+.bottom-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-label);
+}
+
+/* Responsive */
+@media (max-width: 860px) {
+  #top-nav {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .brand-tag { display: none; }
+  .floating-panel {
+    width: 220px;
+    padding: 14px;
+  }
+  #bottom-bar { display: none; }
+}

@@ -1,0 +1,596 @@
+/* ============================================================
+   InvisiGuard — Unified Multi-Section Platform Stylesheet
+   Design Language: Dark Terracotta Obsidian + Electric Green Accents
+   Guidelines: /cinematic-lowpoly-terracotta + /cinematic-web-typography
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Canvas Backgrounds */
+  --bg-deep:         #0a0807;
+  --bg-surface:      #120e0d;
+  --bg-card:         rgba(22, 17, 15, 0.88);
+  --bg-card-hover:   rgba(32, 24, 21, 0.95);
+  --bg-border:       rgba(196, 118, 107, 0.18);
+  --bg-border-hover: rgba(196, 118, 107, 0.38);
+
+  /* Terracotta Palette */
+  --terra-base:      #C4766B;
+  --terra-dark:      #A85F55;
+  --terra-mid:       #D4897E;
+  --terra-light:     #E8A898;
+  --terra-pale:      #EFC0B5;
+  --terra-sun:       #F5C07A;
+
+  /* RuView Electric Green */
+  --green-glow:      #00d878;
+  --green-bright:    #3eff8a;
+  --green-dim:       #0a6b3a;
+
+  /* Status Colors */
+  --status-live:     #00d878;
+  --status-demo:     #F5C07A;
+  --status-off:      #68605c;
+  --red-alert:       #FF4060;
+  --red-alert-bg:    rgba(255, 64, 96, 0.15);
+
+  /* Typography */
+  --text-primary:    #EDE6E0;
+  --text-secondary:  rgba(237, 230, 224, 0.68);
+  --text-label:      rgba(237, 230, 224, 0.45);
+  --text-mono:       #D4897E;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================================
+   Header & Navigation (Clean, Spacious, Uncongested)
+   ============================================================ */
+.site-header {
+  background: rgba(12, 10, 9, 0.92);
+  border-bottom: 1px solid var(--bg-border);
+  backdrop-filter: blur(20px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 0 28px;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  border-bottom: 1px solid rgba(196, 118, 107, 0.1);
+}
+
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: -0.3px;
+}
+
+.brand-icon {
+  color: var(--terra-base);
+  font-size: 20px;
+}
+
+.brand-subtitle {
+  font-size: 11px;
+  color: var(--text-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-left: 1px solid rgba(196, 118, 107, 0.25);
+  padding-left: 10px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: rgba(22, 17, 15, 0.8);
+  border: 1px solid var(--bg-border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+}
+
+.status-dot.live {
+  background: var(--status-live);
+  box-shadow: 0 0 8px rgba(0, 216, 120, 0.8);
+  animation: pulse-dot 1.5s ease infinite;
+}
+
+.status-dot.demo {
+  background: var(--status-demo);
+  box-shadow: 0 0 6px rgba(245, 192, 122, 0.6);
+}
+
+.status-dot.disconnected {
+  background: var(--status-off);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.3); }
+}
+
+.btn-toggle-source {
+  background: rgba(196, 118, 107, 0.12);
+  border: 1px solid var(--bg-border);
+  color: var(--terra-pale);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-toggle-source:hover {
+  background: rgba(196, 118, 107, 0.25);
+  border-color: var(--terra-base);
+}
+
+/* Tabs Navigation Bar (Just like RuView) */
+.tabs-nav {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(196, 118, 107, 0.08);
+}
+
+.tab-btn.active {
+  color: #fff;
+  background: rgba(196, 118, 107, 0.25);
+  border-bottom: 2px solid var(--terra-base);
+  font-weight: 600;
+}
+
+.tab-icon {
+  font-size: 13px;
+  color: var(--terra-base);
+}
+
+/* ============================================================
+   Content Area & Sections
+   ============================================================ */
+.main-content {
+  flex: 1;
+  position: relative;
+}
+
+.section-pane {
+  display: none;
+  animation: fadeIn 0.25s ease;
+}
+
+.section-pane.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Standard Section Layout (Spacious, Generous Breathing Room) */
+.section-container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 32px 28px 60px 28px;
+}
+
+.section-header {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  letter-spacing: -0.4px;
+}
+
+.section-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Card Grids */
+.card-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.card-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.ui-card {
+  background: var(--bg-card);
+  border: 1px solid var(--bg-border);
+  border-radius: 14px;
+  padding: 22px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s ease;
+}
+
+.ui-card:hover {
+  border-color: var(--bg-border-hover);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(196, 118, 107, 0.1);
+  padding-bottom: 10px;
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--terra-mid);
+}
+
+.card-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(196, 118, 107, 0.15);
+  color: var(--terra-pale);
+}
+
+/* ============================================================
+   Section 1: 3D Bedroom Sensing Tab (Full-Width Immersion)
+   ============================================================ */
+#pane-bedroom {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 105px);
+  overflow: hidden;
+}
+
+#scene-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+#scene-canvas:active {
+  cursor: grabbing;
+}
+
+/* Bedroom Overlay Controls */
+.bedroom-overlay {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.bedroom-controls {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(16, 12, 11, 0.85);
+  border: 1px solid var(--bg-border);
+  padding: 6px 14px;
+  border-radius: 24px;
+  backdrop-filter: blur(14px);
+}
+
+.bedroom-controls select {
+  background: transparent;
+  border: none;
+  color: var(--terra-pale);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+}
+
+.bedroom-actions {
+  pointer-events: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.icon-btn {
+  background: rgba(16, 12, 11, 0.85);
+  border: 1px solid var(--bg-border);
+  color: var(--text-secondary);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  backdrop-filter: blur(14px);
+  transition: all 0.2s ease;
+}
+
+.icon-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--terra-base);
+  background: rgba(196, 118, 107, 0.2);
+}
+
+.bedroom-status-strip {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 7px 22px;
+  background: rgba(16, 12, 11, 0.88);
+  border: 1px solid var(--bg-border);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  z-index: 10;
+}
+
+.strip-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.strip-dot {
+  color: var(--terra-base);
+}
+
+.strip-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(196, 118, 107, 0.2);
+}
+
+/* ============================================================
+   Section 2: Vitals & Biometrics Suite
+   ============================================================ */
+.vital-metric-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  margin: 10px 0 6px 0;
+}
+
+.vital-metric-unit {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+.vital-metric-bar {
+  height: 5px;
+  background: rgba(196, 118, 107, 0.15);
+  border-radius: 3px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.vital-metric-fill {
+  height: 100%;
+  background: var(--terra-base);
+  border-radius: 3px;
+  transition: width 0.35s ease;
+}
+
+.vital-metric-fill.green {
+  background: var(--green-glow);
+}
+
+.canvas-box {
+  background: rgba(10, 8, 7, 0.5);
+  border: 1px solid rgba(196, 118, 107, 0.12);
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 14px;
+}
+
+.canvas-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-label);
+  margin-bottom: 6px;
+}
+
+canvas.metric-canvas {
+  width: 100%;
+  display: block;
+}
+
+/* ============================================================
+   Section 3: Hardware & RF Signals
+   ============================================================ */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table tr {
+  border-bottom: 1px solid rgba(196, 118, 107, 0.08);
+}
+
+.data-table td {
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.data-table td:first-child {
+  color: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 10px;
+}
+
+.data-table td:last-child {
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--terra-pale);
+  font-weight: 500;
+}
+
+/* ============================================================
+   Section 4: Safety & Fall Detection Monitor
+   ============================================================ */
+.alert-card-state {
+  padding: 18px;
+  border-radius: 10px;
+  text-align: center;
+  margin-bottom: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.alert-card-state.safe {
+  background: rgba(0, 216, 120, 0.12);
+  border: 1px solid rgba(0, 216, 120, 0.35);
+  color: var(--green-bright);
+}
+
+.alert-card-state.fall {
+  background: var(--red-alert-bg);
+  border: 1px solid rgba(255, 64, 96, 0.6);
+  color: var(--red-alert);
+  animation: pulse-alert 0.8s ease infinite;
+}
+
+@keyframes pulse-alert {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+/* ============================================================
+   Section 5: ML Studio & Dataset Recording
+   ============================================================ */
+.btn-primary {
+  background: var(--terra-base);
+  color: #fff;
+  border: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background: var(--terra-mid);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--bg-border);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  border-color: var(--terra-base);
+  color: var(--text-primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .site-header { padding: 0 16px; }
+  .section-container { padding: 20px 16px; }
+  .card-grid-3, .card-grid-2 { grid-template-columns: 1fr; }
+  .brand-subtitle { display: none; }
+}
