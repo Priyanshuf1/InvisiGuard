@@ -654,6 +654,9 @@ class InvisiGuardApp {
         }
       });
     });
+
+    const defaultBtn = document.querySelector('.tab-btn[data-tab="bedroom"]');
+    if (defaultBtn) defaultBtn.click();
   }
 
   _bindEvents() {

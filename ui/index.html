@@ -6,6 +6,18 @@
   <title>InvisiGuard — WiFi CSI Sensing & Safety Platform</title>
   <link rel="stylesheet" href="invisiguard-app.css">
   <link rel="icon" href="favicon.ico">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        for (const reg of regs) reg.unregister();
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then(keys => {
+        for (const k of keys) caches.delete(k);
+      });
+    }
+  </script>
 </head>
 <body>
 
