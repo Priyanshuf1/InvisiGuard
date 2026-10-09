@@ -619,6 +619,9 @@ class InvisiGuardApp {
       var: 0,
       mot: 0,
       fall: false,
+      struggle: false,
+      mlClass: 'NORMAL_STUDYING',
+      mlConf: 0.90,
       fallSeconds: 0,
       triage: null,
       dspFiltering: null,
@@ -1184,6 +1187,9 @@ class InvisiGuardApp {
     const isLive = (this.state.sourceState === 'live' && this.state.nodes > 0);
     this.state.presence = isLive ? (cls.presence || false) : false;
     this.state.fall = isLive ? (cls.fall_detected || false) : false;
+    this.state.struggle = isLive ? (cls.struggle_detected || false) : false;
+    this.state.mlClass = cls.ml_class || (msg.ml_inference && msg.ml_inference.class_name) || 'NORMAL_STUDYING';
+    this.state.mlConf = cls.ml_confidence || (msg.ml_inference && msg.ml_inference.confidence) || 0.90;
     this.state.rssi = typeof feat.mean_rssi === 'number' ? feat.mean_rssi : -50;
     this.state.var = typeof feat.variance === 'number' ? feat.variance : 0;
     this.state.mot = typeof feat.motion_band_power === 'number' ? feat.motion_band_power : 0;
@@ -1197,7 +1203,7 @@ class InvisiGuardApp {
       if (msg.dsp_filtering) this.state.dspFiltering = msg.dsp_filtering;
 
       if (this.state.fall) this.state.pose = 'fallen';
-      else if (cls.motion_level === 'active') this.state.pose = 'walking';
+      else if (this.state.struggle || cls.motion_level === 'active' || this.state.mlClass === 'WALKING' || this.state.mlClass === 'VIOLENT_STRUGGLE') this.state.pose = 'walking';
       else this.state.pose = 'standing';
     } else {
       this.state.hr = 0;
@@ -1399,10 +1405,14 @@ class InvisiGuardApp {
     if (elSafetyCard && elSafetyText) {
       if (this.state.fall) {
         elSafetyCard.className = 'alert-card-state fall';
-        elSafetyText.textContent = '⚠ CRITICAL ALERT: FALL DETECTED ON BEDROOM FLOOR';
+        elSafetyText.textContent = `⚠ CRITICAL ALERT: FALL DETECTED ON BEDROOM FLOOR (${Math.round(this.state.mlConf * 100)}% CONF)`;
+      } else if (this.state.struggle) {
+        elSafetyCard.className = 'alert-card-state fall';
+        elSafetyText.textContent = `⚠ VIOLENT STRUGGLE / AGITATION DETECTED (${Math.round(this.state.mlConf * 100)}% CONF)`;
       } else if (this.state.presence) {
         elSafetyCard.className = 'alert-card-state safe';
-        elSafetyText.textContent = '✓ ROOM SECURE · NORMAL MOTION DETECTED';
+        const prettyCls = (this.state.mlClass || 'NORMAL_STUDYING').replace(/_/g, ' ');
+        elSafetyText.textContent = `✓ ROOM OCCUPIED · ${prettyCls} (${Math.round(this.state.mlConf * 100)}% CONF)`;
       } else {
         elSafetyCard.className = 'alert-card-state safe';
         elSafetyText.textContent = '✓ ROOM EMPTY · STANDBY MODE';

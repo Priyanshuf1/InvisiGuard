@@ -596,7 +596,7 @@ class InvisiGuardApp {
     this.scenario = 'auto';
     this.autoTimer = 0;
     this.autoIdx = 0;
-    this.autoList = ['vitals', 'study', 'sleep', 'walking', 'fall', 'empty'];
+    this.autoList = ['vitals', 'study', 'sleep', 'fever', 'walking', 'fall', 'empty'];
 
     // DOM Hooks
     this.statusDot = document.getElementById('status-dot');
@@ -619,7 +619,12 @@ class InvisiGuardApp {
       var: 0,
       mot: 0,
       fall: false,
+      struggle: false,
+      mlClass: 'NORMAL_STUDYING',
+      mlConf: 0.90,
       fallSeconds: 0,
+      triage: null,
+      dspFiltering: null,
     };
 
     // Submodules
@@ -834,6 +839,17 @@ class InvisiGuardApp {
       });
     });
 
+    // Tap anywhere on a class card (especially 0: Empty Bedroom) to trigger preparation modal
+    document.querySelectorAll('.class-rec-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.class-card-btns') || e.target.closest('.btn-rec-start') || e.target.closest('.btn-rec-stop') || e.target.closest('.btn-open-prep')) {
+          return;
+        }
+        const prepBtn = card.querySelector('.btn-open-prep');
+        if (prepBtn) prepBtn.click();
+      });
+    });
+
     // Duration selector pills (5s, 10s, 20s)
     durationPills.forEach(pill => {
       pill.addEventListener('click', () => {
@@ -895,8 +911,12 @@ class InvisiGuardApp {
     const btnToggleFft = document.getElementById('btn-toggle-fft-filter');
     const badgeFft = document.getElementById('fft-filter-badge');
     if (btnToggleFft) {
-      btnToggleFft.addEventListener('click', () => {
+      btnToggleFft.addEventListener('click', async () => {
         this.filterFanEnabled = !this.filterFanEnabled;
+        try {
+          fetch('/api/v1/invisiguard/dsp/toggle-fan-filter', { method: 'POST' }).catch(() => {});
+        } catch (e) {}
+
         if (this.filterFanEnabled) {
           if (badgeFft) {
             badgeFft.textContent = '✓ Comb & Bandpass Filter Active (-45 dB)';
@@ -1167,6 +1187,9 @@ class InvisiGuardApp {
     const isLive = (this.state.sourceState === 'live' && this.state.nodes > 0);
     this.state.presence = isLive ? (cls.presence || false) : false;
     this.state.fall = isLive ? (cls.fall_detected || false) : false;
+    this.state.struggle = isLive ? (cls.struggle_detected || false) : false;
+    this.state.mlClass = cls.ml_class || (msg.ml_inference && msg.ml_inference.class_name) || 'NORMAL_STUDYING';
+    this.state.mlConf = cls.ml_confidence || (msg.ml_inference && msg.ml_inference.confidence) || 0.90;
     this.state.rssi = typeof feat.mean_rssi === 'number' ? feat.mean_rssi : -50;
     this.state.var = typeof feat.variance === 'number' ? feat.variance : 0;
     this.state.mot = typeof feat.motion_band_power === 'number' ? feat.motion_band_power : 0;
@@ -1176,14 +1199,18 @@ class InvisiGuardApp {
       this.state.br = vit.breathing_rate_bpm || 16;
       this.state.conf = Math.round((vit.confidence || 0.88) * 100);
 
+      if (msg.triage) this.state.triage = msg.triage;
+      if (msg.dsp_filtering) this.state.dspFiltering = msg.dsp_filtering;
+
       if (this.state.fall) this.state.pose = 'fallen';
-      else if (cls.motion_level === 'active') this.state.pose = 'walking';
+      else if (this.state.struggle || cls.motion_level === 'active' || this.state.mlClass === 'WALKING' || this.state.mlClass === 'VIOLENT_STRUGGLE') this.state.pose = 'walking';
       else this.state.pose = 'standing';
     } else {
       this.state.hr = 0;
       this.state.br = 0;
       this.state.conf = 0;
       this.state.pose = 'standing';
+      if (msg.triage) this.state.triage = msg.triage;
     }
 
     this._pushRssi(this.state.rssi);
@@ -1215,6 +1242,14 @@ class InvisiGuardApp {
       this.state.var = 0.08;
       this.state.mot = 0.01;
       this.state.fall = false;
+      this.state.triage = {
+        state: "EMPTY_ROOM",
+        state_label: "Room Empty · Standby Mode",
+        restlessness_index: 0.00,
+        respiratory_regularity_pct: 0.0,
+        fever_score: 0.00,
+        fever_risk: "nominal"
+      };
     } else if (s === 'sleep') {
       this.state.presence = true;
       this.state.pose = 'sleep';
@@ -1225,6 +1260,32 @@ class InvisiGuardApp {
       this.state.var = 0.42;
       this.state.mot = 0.02;
       this.state.fall = false;
+      this.state.triage = {
+        state: "HEALTHY_RESTFUL_SLEEP",
+        state_label: "Normal Restful Sleep",
+        restlessness_index: 0.03,
+        respiratory_regularity_pct: 98.4,
+        fever_score: 0.04,
+        fever_risk: "low"
+      };
+    } else if (s === 'fever') {
+      this.state.presence = true;
+      this.state.pose = 'sleep';
+      this.state.hr = Math.round(104 + Math.sin(t * 0.5) * 4);
+      this.state.br = Math.round(25 + Math.cos(t * 0.4) * 2);
+      this.state.conf = 97;
+      this.state.rssi = -46;
+      this.state.var = 0.95;
+      this.state.mot = 0.08;
+      this.state.fall = false;
+      this.state.triage = {
+        state: "SICK_HIGH_FEVER",
+        state_label: "Warning: High Fever / Sickness Tachycardia Detected",
+        restlessness_index: 0.42,
+        respiratory_regularity_pct: 82.5,
+        fever_score: 0.86,
+        fever_risk: "high"
+      };
     } else if (s === 'study') {
       this.state.presence = true;
       this.state.pose = 'study';
@@ -1344,10 +1405,14 @@ class InvisiGuardApp {
     if (elSafetyCard && elSafetyText) {
       if (this.state.fall) {
         elSafetyCard.className = 'alert-card-state fall';
-        elSafetyText.textContent = '⚠ CRITICAL ALERT: FALL DETECTED ON BEDROOM FLOOR';
+        elSafetyText.textContent = `⚠ CRITICAL ALERT: FALL DETECTED ON BEDROOM FLOOR (${Math.round(this.state.mlConf * 100)}% CONF)`;
+      } else if (this.state.struggle) {
+        elSafetyCard.className = 'alert-card-state fall';
+        elSafetyText.textContent = `⚠ VIOLENT STRUGGLE / AGITATION DETECTED (${Math.round(this.state.mlConf * 100)}% CONF)`;
       } else if (this.state.presence) {
         elSafetyCard.className = 'alert-card-state safe';
-        elSafetyText.textContent = '✓ ROOM SECURE · NORMAL MOTION DETECTED';
+        const prettyCls = (this.state.mlClass || 'NORMAL_STUDYING').replace(/_/g, ' ');
+        elSafetyText.textContent = `✓ ROOM OCCUPIED · ${prettyCls} (${Math.round(this.state.mlConf * 100)}% CONF)`;
       } else {
         elSafetyCard.className = 'alert-card-state safe';
         elSafetyText.textContent = '✓ ROOM EMPTY · STANDBY MODE';
@@ -1359,40 +1424,74 @@ class InvisiGuardApp {
     const elRestless = document.getElementById('triage-restless');
     const elRespReg = document.getElementById('triage-respreg');
     const elFever = document.getElementById('triage-feverscore');
+    const tr = this.state.triage;
 
     if (elTriageBadge) {
-      if (this.state.fall) {
-        elTriageBadge.textContent = '⚠ CRITICAL: FALL IMPACT / FLOOR INACTIVITY';
-        elTriageBadge.style.color = 'var(--red-alert)';
-        elTriageBadge.style.background = 'rgba(255, 64, 96, 0.12)';
-        elTriageBadge.style.borderColor = 'rgba(255, 64, 96, 0.35)';
-      } else if (this.state.presence) {
-        if (this.state.hr > 95 && this.state.br > 22 && this.state.mot < 0.1) {
-          elTriageBadge.textContent = '⚠ SICKNESS / FEVER TACHYCARDIA DETECTED';
+      if (tr && tr.state) {
+        if (tr.state === 'FALL_UNCONSCIOUS') {
+          elTriageBadge.textContent = '⚠ ' + tr.state_label;
+          elTriageBadge.style.color = 'var(--red-alert)';
+          elTriageBadge.style.background = 'rgba(255, 64, 96, 0.12)';
+          elTriageBadge.style.borderColor = 'rgba(255, 64, 96, 0.35)';
+        } else if (tr.state === 'SICK_HIGH_FEVER' || tr.state === 'RESPIRATORY_DISTRESS') {
+          elTriageBadge.textContent = '⚠ ' + tr.state_label;
           elTriageBadge.style.color = '#f59e0b';
           elTriageBadge.style.background = 'rgba(245, 158, 11, 0.12)';
           elTriageBadge.style.borderColor = 'rgba(245, 158, 11, 0.35)';
-        } else if (this.state.pose === 'sleep' || this.state.mot < 0.05) {
-          elTriageBadge.textContent = '✓ Normal Restful Sleep';
+        } else if (tr.state === 'HEALTHY_RESTFUL_SLEEP') {
+          elTriageBadge.textContent = '✓ ' + tr.state_label;
           elTriageBadge.style.color = 'var(--green-bright)';
           elTriageBadge.style.background = 'rgba(0, 216, 120, 0.12)';
           elTriageBadge.style.borderColor = 'rgba(0, 216, 120, 0.3)';
-        } else {
-          elTriageBadge.textContent = '✓ Active Student (Normal Vitals)';
+        } else if (tr.state === 'ACTIVE_OCCUPANCY') {
+          elTriageBadge.textContent = '✓ ' + tr.state_label;
           elTriageBadge.style.color = 'var(--terra-pale)';
           elTriageBadge.style.background = 'rgba(196, 118, 107, 0.12)';
           elTriageBadge.style.borderColor = 'rgba(196, 118, 107, 0.3)';
+        } else {
+          elTriageBadge.textContent = '✓ ' + tr.state_label;
+          elTriageBadge.style.color = 'var(--text-secondary)';
+          elTriageBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+          elTriageBadge.style.borderColor = 'var(--border-subtle)';
         }
       } else {
-        elTriageBadge.textContent = '✓ Room Empty Standby';
-        elTriageBadge.style.color = 'var(--text-secondary)';
-        elTriageBadge.style.background = 'rgba(255, 255, 255, 0.05)';
-        elTriageBadge.style.borderColor = 'var(--border-subtle)';
+        if (this.state.fall) {
+          elTriageBadge.textContent = '⚠ CRITICAL: FALL IMPACT / FLOOR INACTIVITY';
+          elTriageBadge.style.color = 'var(--red-alert)';
+          elTriageBadge.style.background = 'rgba(255, 64, 96, 0.12)';
+          elTriageBadge.style.borderColor = 'rgba(255, 64, 96, 0.35)';
+        } else if (this.state.presence) {
+          if (this.state.hr > 95 && this.state.br > 22 && this.state.mot < 0.1) {
+            elTriageBadge.textContent = '⚠ SICKNESS / FEVER TACHYCARDIA DETECTED';
+            elTriageBadge.style.color = '#f59e0b';
+            elTriageBadge.style.background = 'rgba(245, 158, 11, 0.12)';
+            elTriageBadge.style.borderColor = 'rgba(245, 158, 11, 0.35)';
+          } else if (this.state.pose === 'sleep' || this.state.mot < 0.05) {
+            elTriageBadge.textContent = '✓ Normal Restful Sleep';
+            elTriageBadge.style.color = 'var(--green-bright)';
+            elTriageBadge.style.background = 'rgba(0, 216, 120, 0.12)';
+            elTriageBadge.style.borderColor = 'rgba(0, 216, 120, 0.3)';
+          } else {
+            elTriageBadge.textContent = '✓ Active Student (Normal Vitals)';
+            elTriageBadge.style.color = 'var(--terra-pale)';
+            elTriageBadge.style.background = 'rgba(196, 118, 107, 0.12)';
+            elTriageBadge.style.borderColor = 'rgba(196, 118, 107, 0.3)';
+          }
+        } else {
+          elTriageBadge.textContent = '✓ Room Empty Standby';
+          elTriageBadge.style.color = 'var(--text-secondary)';
+          elTriageBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+          elTriageBadge.style.borderColor = 'var(--border-subtle)';
+        }
       }
     }
 
     if (elRestless) {
-      if (this.state.presence) {
+      if (tr && typeof tr.restlessness_index === 'number') {
+        const idx = tr.restlessness_index.toFixed(2);
+        const label = idx > 0.35 ? '(High Agitation)' : '(Calm)';
+        elRestless.innerHTML = `${idx} <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">${label}</span>`;
+      } else if (this.state.presence) {
         const idx = Math.min(0.99, (this.state.var * 0.025 + this.state.mot * 0.08)).toFixed(2);
         const label = idx > 0.35 ? '(High Agitation)' : '(Calm)';
         elRestless.innerHTML = `${idx} <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">${label}</span>`;
@@ -1402,7 +1501,9 @@ class InvisiGuardApp {
     }
 
     if (elRespReg) {
-      if (this.state.presence && this.state.br > 0) {
+      if (tr && typeof tr.respiratory_regularity_pct === 'number' && this.state.presence) {
+        elRespReg.innerHTML = `${tr.respiratory_regularity_pct.toFixed(1)}% <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Eupnea)</span>`;
+      } else if (this.state.presence && this.state.br > 0) {
         elRespReg.innerHTML = `98.2% <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Eupnea)</span>`;
       } else {
         elRespReg.innerHTML = `-- <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Standby)</span>`;
@@ -1410,7 +1511,13 @@ class InvisiGuardApp {
     }
 
     if (elFever) {
-      if (this.state.presence && this.state.hr > 0) {
+      if (tr && typeof tr.fever_score === 'number' && this.state.presence) {
+        const score = tr.fever_score.toFixed(2);
+        const isFever = (tr.fever_risk === 'high' || tr.fever_score > 0.4);
+        const color = isFever ? 'var(--red-alert)' : 'var(--green-bright)';
+        const risk = isFever ? '(High Risk - Fever)' : '(Low Risk - Healthy)';
+        elFever.innerHTML = `${score} <span style="font-size: 12px; font-weight: 500; color: ${color};">${risk}</span>`;
+      } else if (this.state.presence && this.state.hr > 0) {
         const isFever = (this.state.hr > 95 && this.state.br > 22 && this.state.mot < 0.1);
         const score = isFever ? '0.84' : '0.04';
         const color = isFever ? 'var(--red-alert)' : 'var(--green-bright)';

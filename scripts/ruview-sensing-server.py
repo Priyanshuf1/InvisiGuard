@@ -1120,6 +1120,7 @@ def generate_signal_field(snap: Dict[str, Any], grid_size: int = 20) -> Dict[str
 
 def build_sensing_update_message(snap: Dict[str, Any]) -> str:
     signal_field = generate_signal_field(snap)
+    ml_inf = invisiguard_ml_engine.predict_snapshot(snap)
     msg = {
         "type": "sensing_update",
         "timestamp": snap["timestamp"],
@@ -1155,16 +1156,12 @@ def build_sensing_update_message(snap: Dict[str, Any]) -> str:
             "motion_level": snap["motion_level"],
             "presence": snap["presence"],
             "confidence": snap["confidence"],
-            "fall_detected": snap["variance"] > 350.0 or (snap.get("ml_inference", {}).get("class_id") == 4),
-            "struggle_detected": (snap.get("ml_inference", {}).get("class_id") == 3),
-            "ml_class": snap.get("ml_inference", {}).get("class_name", "NORMAL_STUDYING"),
-            "ml_confidence": snap.get("ml_inference", {}).get("confidence", 0.90),
+            "fall_detected": snap["variance"] > 350.0 or (ml_inf.get("class_id") == 4),
+            "struggle_detected": (ml_inf.get("class_id") == 3),
+            "ml_class": ml_inf.get("class_name", "NORMAL_STUDYING"),
+            "ml_confidence": ml_inf.get("confidence", 0.90),
         },
-        "ml_inference": snap.get("ml_inference", {
-            "class_id": 1,
-            "class_name": "NORMAL_STUDYING",
-            "confidence": 0.90,
-        }),
+        "ml_inference": ml_inf,
         "vital_signs": {
             "heart_rate_bpm": round(snap["heartrate_bpm"], 1),
             "breathing_rate_bpm": round(snap["breathing_rate_bpm"], 1),
