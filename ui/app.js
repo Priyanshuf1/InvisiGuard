@@ -787,13 +787,22 @@ class InvisiGuardApp {
         try {
           const msg = JSON.parse(evt.data);
           if (msg.type === 'sensing_update') {
-            if (msg.packets_received > 0) {
+            const isLivePacket = (msg.source_state === 'live' || (msg.hardware && msg.hardware.connected)) && (msg.nodes_count > 0 || (msg.nodes && msg.nodes.length > 0));
+            if (isLivePacket) {
               if (this.mode === 'demo') {
                 this.mode = 'live';
               }
               this.state.sourceState = 'live';
-              this.state.nodes = 1;
-              this.state.packets = msg.packets_received;
+              this.state.nodes = msg.nodes_count || 1;
+              if (typeof msg.packets_received === 'number') {
+                this.state.packets = msg.packets_received;
+              }
+            } else if (this.mode === 'live') {
+              this.state.sourceState = msg.source_state || 'disconnected';
+              this.state.nodes = 0;
+              if (typeof msg.packets_received === 'number') {
+                this.state.packets = msg.packets_received;
+              }
             }
             if (this.mode === 'live') {
               this._handleLiveTelemetry(msg);
@@ -825,13 +834,9 @@ class InvisiGuardApp {
     if (typeof msg.packets_received === 'number') {
       this.state.packets = msg.packets_received;
     }
-    if (this.state.packets > 0) {
-      this.state.sourceState = 'live';
-      this.state.nodes = 1;
-    }
-
-    // In live mode, only report presence if active hardware is sending packets
-    const isLive = (this.state.sourceState === 'live' || this.state.packets > 0) && this.state.nodes > 0;
+    const isLive = (msg.source_state === 'live' || (msg.hardware && msg.hardware.connected)) && (msg.nodes_count > 0 || (msg.nodes && msg.nodes.length > 0));
+    this.state.sourceState = isLive ? 'live' : (msg.source_state || 'disconnected');
+    this.state.nodes = isLive ? (msg.nodes_count || 1) : 0;
 
     this.state.presence = isLive ? (cls.presence || false) : false;
     this.state.fallDetected = isLive ? (cls.fall_detected || false) : false;
@@ -887,7 +892,7 @@ class InvisiGuardApp {
       this.nodeNum.textContent = '1';
       this.pktNum.textContent = String(this.state.packets);
     } else {
-      if ((this.state.sourceState === 'live' || this.state.packets > 0) && this.state.nodes > 0) {
+      if (this.state.sourceState === 'live' && this.state.nodes > 0) {
         this.connDot.className = 'dot dot--live';
         this.connLabel.textContent = `LIVE CSI · 1 NODE (${this.state.packets} PKTS)`;
         this.nodeNum.textContent = String(this.state.nodes);

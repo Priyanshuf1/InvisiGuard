@@ -169,6 +169,17 @@ async def run_verification():
     from scripts.ruview_sensing_server_loader import get_server_modules
     dsp_engine, ml_engine = get_server_modules()
 
+    # Warm up first call (standard for numpy FFT / threadpool initialization)
+    _ = dsp_engine.process_csi_frame(
+        amplitudes=p_csv1["amplitudes"],
+        rssi=p_csv1["rssi"],
+        variance=1.45,
+        motion_band=0.08,
+        seq=p_csv1["seq"],
+        timestamp=time.time(),
+        phases=p_csv1["phases"],
+    )
+
     # Verify DSP fan filter notch attenuation
     t_start = time.perf_counter()
     dsp_res = dsp_engine.process_csi_frame(

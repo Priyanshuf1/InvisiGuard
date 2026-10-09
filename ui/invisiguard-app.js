@@ -1170,15 +1170,24 @@ class InvisiGuardApp {
         try {
           const msg = JSON.parse(evt.data);
           if (msg.type === 'sensing_update') {
+            const isLivePacket = (msg.source_state === 'live' || (msg.hardware && msg.hardware.connected)) && (msg.nodes_count > 0 || (msg.nodes && msg.nodes.length > 0));
             // Auto-transition from Demo or Disconnected to Live CSI within 500ms of first physical packet
-            if (msg.packets_received > 0) {
+            if (isLivePacket) {
               if (this.mode === 'demo') {
                 this.mode = 'live';
                 if (this.sourceLabel) this.sourceLabel.textContent = 'Live Hardware';
               }
               this.state.sourceState = 'live';
-              this.state.nodes = 1;
-              this.state.packets = msg.packets_received;
+              this.state.nodes = msg.nodes_count || 1;
+              if (typeof msg.packets_received === 'number') {
+                this.state.packets = msg.packets_received;
+              }
+            } else if (this.mode === 'live') {
+              this.state.sourceState = 'disconnected';
+              this.state.nodes = 0;
+              if (typeof msg.packets_received === 'number') {
+                this.state.packets = msg.packets_received;
+              }
             }
             if (this.mode === 'live') {
               this._handleLiveFrame(msg);
@@ -1200,15 +1209,13 @@ class InvisiGuardApp {
     if (typeof msg.packets_received === 'number') {
       this.state.packets = msg.packets_received;
     }
-    if (this.state.packets > 0) {
-      this.state.sourceState = 'live';
-      this.state.nodes = 1;
-    }
+    const isLive = (msg.source_state === 'live' || (msg.hardware && msg.hardware.connected)) && (msg.nodes_count > 0 || (msg.nodes && msg.nodes.length > 0));
+    this.state.sourceState = isLive ? 'live' : 'disconnected';
+    this.state.nodes = isLive ? (msg.nodes_count || 1) : 0;
     if (msg.hardware) {
       this.state.hardware = msg.hardware;
     }
 
-    const isLive = (this.state.sourceState === 'live' && this.state.nodes > 0);
     this.state.presence = isLive ? (cls.presence || false) : false;
     this.state.fall = isLive ? (cls.fall_detected || false) : false;
     this.state.struggle = isLive ? (cls.struggle_detected || false) : false;

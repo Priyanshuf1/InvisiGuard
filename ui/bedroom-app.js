@@ -985,14 +985,23 @@ class BedroomObservatoryApp {
         try {
           const msg = JSON.parse(evt.data);
           if (msg.type === 'sensing_update') {
-            if (msg.packets_received > 0) {
+            const isLivePacket = (msg.source_state === 'live' || (msg.hardware && msg.hardware.connected)) && (msg.nodes_count > 0 || (msg.nodes && msg.nodes.length > 0));
+            if (isLivePacket) {
               if (this.mode === 'demo') {
                 this.mode = 'live';
                 if (this.sourceLabel) this.sourceLabel.textContent = 'Live Hardware';
               }
               this.telemetry.sourceState = 'live';
-              this.telemetry.nodes = 1;
-              this.telemetry.packets = msg.packets_received;
+              this.telemetry.nodes = msg.nodes_count || 1;
+              if (typeof msg.packets_received === 'number') {
+                this.telemetry.packets = msg.packets_received;
+              }
+            } else if (this.mode === 'live') {
+              this.telemetry.sourceState = 'disconnected';
+              this.telemetry.nodes = 0;
+              if (typeof msg.packets_received === 'number') {
+                this.telemetry.packets = msg.packets_received;
+              }
             }
             if (this.mode === 'live') {
               this._handleLiveFrame(msg);
@@ -1014,12 +1023,10 @@ class BedroomObservatoryApp {
     if (typeof msg.packets_received === 'number') {
       this.telemetry.packets = msg.packets_received;
     }
-    if (this.telemetry.packets > 0) {
-      this.telemetry.sourceState = 'live';
-      this.telemetry.nodes = 1;
-    }
+    const isLive = (msg.source_state === 'live' || (msg.hardware && msg.hardware.connected)) && (msg.nodes_count > 0 || (msg.nodes && msg.nodes.length > 0));
+    this.telemetry.sourceState = isLive ? 'live' : 'disconnected';
+    this.telemetry.nodes = isLive ? (msg.nodes_count || 1) : 0;
 
-    const isLive = (this.telemetry.sourceState === 'live' && this.telemetry.nodes > 0);
     this.telemetry.presence = isLive ? (cls.presence || false) : false;
     this.telemetry.fall = isLive ? (cls.fall_detected || false) : false;
     this.telemetry.rssi = typeof feat.mean_rssi === 'number' ? feat.mean_rssi : -50;

@@ -247,50 +247,78 @@ class WiFiCsiDspEngine:
         phases: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
         with self.lock:
-            if not amplitudes or len(amplitudes) < 10:
+            # Sanitize input arrays against NaN / Inf
+            safe_amps = [float(a) for a in (amplitudes or []) if math.isfinite(a)]
+            if len(safe_amps) < 10:
                 amps = np.array([12.0 + 3.0 * math.cos(k * 0.25) for k in range(52)], dtype=np.float64)
             else:
-                amps = np.array(amplitudes[:52], dtype=np.float64)
+                amps = np.array(safe_amps[:52], dtype=np.float64)
+
+            safe_phases = [float(p) for p in (phases or []) if math.isfinite(p)]
+            has_phases = len(safe_phases) >= len(amps)
+
+            v_safe = float(variance) if math.isfinite(variance) else 1.0
+            mb_safe = float(motion_band) if math.isfinite(motion_band) else 0.05
+            rssi_safe = float(rssi) if math.isfinite(rssi) else -50.0
 
             # 1. Tier 1: Adjacent Subcarrier CSI Ratio amplitude/phase modulation
             # R_k = H_k / H_{k+1} (cancels CFO & SFO clock drift)
-            if phases and len(phases) >= len(amps):
-                phase_arr = np.array(phases[:len(amps)], dtype=np.float64)
+            if has_phases:
+                phase_arr = np.array(safe_phases[:len(amps)], dtype=np.float64)
                 H = amps * np.exp(1j * phase_arr)
-                sc_ratio = H[1:] / (H[:-1] + 1e-4)
-                ratio_metric = float(np.mean(np.abs(sc_ratio - 1.0)))
+                denom = np.where(np.abs(H[:-1]) < 1e-4, 1e-4, H[:-1])
+                sc_ratio = H[1:] / denom
+                diff = np.abs(sc_ratio - 1.0)
+                diff = diff[np.isfinite(diff)]
+                ratio_metric = float(np.mean(diff)) if len(diff) > 0 else 0.05
             else:
-                sc_ratio = amps[1:] / (amps[:-1] + 1e-4)
-                ratio_metric = float(np.mean(np.abs(sc_ratio - 1.0)))
+                denom = np.where(amps[:-1] < 1e-4, 1e-4, amps[:-1])
+                sc_ratio = amps[1:] / denom
+                diff = np.abs(sc_ratio - 1.0)
+                diff = diff[np.isfinite(diff)]
+                ratio_metric = float(np.mean(diff)) if len(diff) > 0 else 0.05
+
+            if not math.isfinite(ratio_metric):
+                ratio_metric = 0.05
 
             # If room baseline is calibrated, subtract static multipath H_0
             if self.baseline_calibrated and self.baseline_subcarriers is not None:
                 n_match = min(len(amps), len(self.baseline_subcarriers))
                 dynamic_amps = np.abs(amps[:n_match] - self.baseline_subcarriers[:n_match])
-                signal_sample = float(np.mean(dynamic_amps))
+                val_mean = float(np.mean(dynamic_amps))
+                signal_sample = val_mean if math.isfinite(val_mean) else 1.0
             else:
-                signal_sample = float(np.std(amps)) + ratio_metric * 2.0
+                std_a = float(np.std(amps))
+                signal_sample = (std_a if math.isfinite(std_a) else 1.0) + ratio_metric * 2.0
+
+            if not math.isfinite(signal_sample):
+                signal_sample = 1.0
 
             self.time_series.append(signal_sample)
             self.timestamps.append(timestamp)
 
             # Restlessness tracking
-            self.restlessness_window.append(motion_band)
+            self.restlessness_window.append(mb_safe)
             if len(self.restlessness_window) > 3:
-                self.restlessness_index = round(float(np.std(self.restlessness_window) * 2.0 + np.mean(self.restlessness_window) * 0.5), 3)
+                std_r = float(np.std(self.restlessness_window))
+                mean_r = float(np.mean(self.restlessness_window))
+                self.restlessness_index = round(float((std_r if math.isfinite(std_r) else 0.0) * 2.0 + (mean_r if math.isfinite(mean_r) else 0.0) * 0.5), 3)
             else:
                 self.restlessness_index = 0.03
 
             # 2. Spectral Analysis once buffer is sufficiently populated (>= 32 points)
             if len(self.time_series) >= 32:
                 y = np.array(self.time_series, dtype=np.float64)
+                y = np.nan_to_num(y, nan=1.0, posinf=1.0, neginf=1.0)
                 # Remove DC offset / baseline drift
-                y = y - np.mean(y)
+                mean_y = np.mean(y)
+                y = y - (mean_y if math.isfinite(mean_y) else 0.0)
 
                 # Windowed FFT
                 n_fft = len(y)
                 win = np.hanning(n_fft)
                 spectrum = np.abs(np.fft.rfft(y * win))
+                spectrum = np.nan_to_num(spectrum, nan=0.0, posinf=0.0, neginf=0.0)
                 freqs = np.fft.rfftfreq(n_fft, d=(1.0 / self.fs))
 
                 # Tier 2: Adaptive Comb / Notch Filter
@@ -326,8 +354,8 @@ class WiFiCsiDspEngine:
                 self.cardiac_snr_db = 14.0
 
             # 3. Clinical Triaging Classifier
-            is_empty = (variance < 0.25 and motion_band < 0.03)
-            is_fall = (variance > 350.0)
+            is_empty = (v_safe < 0.25 and mb_safe < 0.03)
+            is_fall = (v_safe > 350.0)
 
             if is_empty:
                 self.triage_state = "EMPTY_ROOM"
@@ -344,7 +372,7 @@ class WiFiCsiDspEngine:
             else:
                 # In bed or studying
                 # Fever / Sickness detection: resting tachycardia (>95 BPM) + tachypnea (>22 RPM) while still
-                is_fever = (self.current_hr_bpm > 95.0 and self.current_rr_rpm > 22.0 and motion_band < 0.15)
+                is_fever = (self.current_hr_bpm > 95.0 and self.current_rr_rpm > 22.0 and mb_safe < 0.15)
                 is_respiratory_distress = (self.current_rr_rpm > 28.0 or (self.current_rr_rpm < 9.0 and self.current_rr_rpm > 0))
 
                 if is_fever:
@@ -510,31 +538,38 @@ class SensingState:
             self.n_subcarriers = n_sc
             self.freq_mhz = freq_mhz
             self.sequence = seq
-            self.rssi_dbm = float(rssi)
-            self.noise_floor_dbm = float(noise)
+            rssi_f = float(rssi) if math.isfinite(rssi) else -50.0
+            noise_f = float(noise) if math.isfinite(noise) else -95.0
+            self.rssi_dbm = rssi_f
+            self.noise_floor_dbm = noise_f
             self.source_addr = source_addr
-            self.last_snr_db = float(rssi - noise)
+            self.last_snr_db = float(rssi_f - noise_f)
             self.last_transport = transport
             self.last_protocol = protocol
             self.last_port = port or source_addr
             self.last_baud = baud
 
-            if amplitudes:
-                self.amplitudes = amplitudes
-                self.mean_amplitude = float(np.mean(amplitudes))
+            valid_amps = [float(a) for a in (amplitudes or []) if math.isfinite(a)]
+            if valid_amps:
+                self.amplitudes = valid_amps
+                val_m = float(np.mean(valid_amps))
+                self.mean_amplitude = val_m if math.isfinite(val_m) else 10.0
             else:
-                self.mean_amplitude = 10.0
+                self.amplitudes = [12.0] * 52
+                self.mean_amplitude = 12.0
 
-            if phases:
-                self.phases = phases
+            valid_phases = [float(p) for p in (phases or []) if math.isfinite(p)]
+            if valid_phases and len(valid_phases) >= len(self.amplitudes):
+                self.phases = valid_phases[:len(self.amplitudes)]
             else:
                 self.phases = [0.0] * len(self.amplitudes)
 
-            if normalized_amplitudes:
-                self.normalized_amplitudes = normalized_amplitudes
+            valid_norm = [float(a) for a in (normalized_amplitudes or []) if math.isfinite(a)]
+            if valid_norm and len(valid_norm) >= len(self.amplitudes):
+                self.normalized_amplitudes = valid_norm[:len(self.amplitudes)]
             else:
                 max_a = max(self.amplitudes) if self.amplitudes and max(self.amplitudes) > 0 else 1.0
-                self.normalized_amplitudes = [round(a / max_a, 4) for a in self.amplitudes]
+                self.normalized_amplitudes = [round(float(a / max_a), 4) for a in self.amplitudes]
 
             # Signal-derived motion & presence
             self.history_rssi.append(self.rssi_dbm)
@@ -1322,9 +1357,9 @@ def build_sensing_update_message(snap: Dict[str, Any]) -> str:
             }
         ] if snap["presence"] else [],
         "signal_field": signal_field,
-        "source_state": "live" if snap["packets_received"] > 0 else "disconnected",
+        "source_state": "live" if (snap["packets_received"] > 0 and (time.time() - snap.get("last_packet_time", 0.0) < 5.0)) else ("idle" if snap["packets_received"] > 0 else "disconnected"),
         "packets_received": snap["packets_received"],
-        "nodes_count": 1 if snap["packets_received"] > 0 else 0,
+        "nodes_count": 1 if (snap["packets_received"] > 0 and (time.time() - snap.get("last_packet_time", 0.0) < 5.0)) else 0,
         "hardware": snap.get("hardware", global_state.get_hardware_status()),
     }
     return json.dumps(msg)
@@ -1454,30 +1489,38 @@ class BroadcasterHub:
     def total_clients(self) -> int:
         return len(self.sensing_clients) + len(self.pose_clients)
 
+    async def _safe_send_sensing(self, client: Any, payload: str) -> Optional[Any]:
+        try:
+            await self.send_to(client, payload)
+            return None
+        except Exception:
+            return client
+
     async def broadcast_sensing(self, payload: str):
         if not self.sensing_clients:
             return
-        dead = []
-        for client in list(self.sensing_clients):
-            try:
-                await self.send_to(client, payload)
-            except Exception:
-                dead.append(client)
+        clients = list(self.sensing_clients)
+        results = await asyncio.gather(*[self._safe_send_sensing(c, payload) for c in clients], return_exceptions=True)
+        dead = [r for r in results if r is not None and not isinstance(r, Exception)]
         if dead:
             async with self.lock:
                 for c in dead:
                     self.sensing_clients.discard(c)
                     self.client_locks.pop(c, None)
 
+    async def _safe_send_pose(self, client: Any, payload: str) -> Optional[Any]:
+        try:
+            await self.send_to(client, payload)
+            return None
+        except Exception:
+            return client
+
     async def broadcast_pose(self, payload: str):
         if not self.pose_clients:
             return
-        dead = []
-        for client in list(self.pose_clients):
-            try:
-                await self.send_to(client, payload)
-            except Exception:
-                dead.append(client)
+        clients = list(self.pose_clients)
+        results = await asyncio.gather(*[self._safe_send_pose(c, payload) for c in clients], return_exceptions=True)
+        dead = [r for r in results if r is not None and not isinstance(r, Exception)]
         if dead:
             async with self.lock:
                 for c in dead:

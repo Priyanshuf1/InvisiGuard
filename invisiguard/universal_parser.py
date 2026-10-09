@@ -108,30 +108,32 @@ class UniversalCsiParser:
                 rssi = rssi_u8 if rssi_u8 < 128 else rssi_u8 - 256
                 noise = noise_u8 if noise_u8 < 128 else noise_u8 - 256
 
-            iq_count = max(1, n_ant * n_sc)
+            if n_sc < 4 or n_sc > 512 or n_ant < 1 or n_ant > 4:
+                return None
+
+            iq_count = n_ant * n_sc
             iq_bytes_needed = cls.HEADER_SIZE + iq_count * 2
 
-            amps: List[float] = []
-            phases: List[float] = []
-            norm_amps: List[float] = []
+            if len(raw) < iq_bytes_needed:
+                # Reject truncated / incomplete binary datagram
+                return None
 
-            if len(raw) >= iq_bytes_needed and iq_count > 0:
-                iq_raw = struct.unpack_from(f"<{iq_count * 2}b", raw, cls.HEADER_SIZE)
-                i_vals = np.array(iq_raw[0::2], dtype=np.float64)
-                q_vals = np.array(iq_raw[1::2], dtype=np.float64)
-                amplitudes = np.sqrt(i_vals**2 + q_vals**2)
-                phase_rad = np.arctan2(q_vals, i_vals)
-                amps = amplitudes.tolist()
-                phases = phase_rad.tolist()
+            iq_raw = struct.unpack_from(f"<{iq_count * 2}b", raw, cls.HEADER_SIZE)
+            i_vals = np.array(iq_raw[0::2], dtype=np.float64)
+            q_vals = np.array(iq_raw[1::2], dtype=np.float64)
+            amplitudes = np.sqrt(i_vals**2 + q_vals**2)
+            if not np.all(np.isfinite(amplitudes)):
+                return None
+            phase_rad = np.arctan2(q_vals, i_vals)
+            amps = amplitudes.tolist()
+            phases = phase_rad.tolist()
 
-                max_a = float(np.max(amplitudes)) if len(amplitudes) > 0 and np.max(amplitudes) > 0 else 1.0
-                norm_amps = (amplitudes / max_a).tolist()
-            else:
-                amps = [12.0] * n_sc
-                phases = [0.0] * n_sc
-                norm_amps = [1.0] * n_sc
+            max_a = float(np.max(amplitudes)) if len(amplitudes) > 0 and np.max(amplitudes) > 0 else 1.0
+            norm_amps = [round(float(a / max_a), 4) for a in amplitudes]
 
-            snr = float(rssi - noise)
+            rssi_f = float(rssi) if math.isfinite(rssi) else -50.0
+            noise_f = float(noise) if math.isfinite(noise) else -95.0
+            snr = float(rssi_f - noise_f)
 
             return {
                 "type": "raw_csi",
@@ -286,26 +288,32 @@ class UniversalCsiParser:
                     except ValueError:
                         pass
 
+            # Sanitize and validate raw subcarrier values
+            valid_vals = [float(v) for v in raw_vals if math.isfinite(v)]
+            if len(valid_vals) < 4:
+                # Malformed CSV or empty subcarrier array: do NOT fabricate fake packets
+                return None
+
             # Convert raw subcarrier values into amplitudes and phases
             # In standard esp-csi, values are interleaved [I, Q, I, Q, ...]
-            if len(raw_vals) >= 4 and len(raw_vals) % 2 == 0:
-                i_v = np.array(raw_vals[0::2], dtype=np.float64)
-                q_v = np.array(raw_vals[1::2], dtype=np.float64)
+            if len(valid_vals) % 2 == 0:
+                i_v = np.array(valid_vals[0::2], dtype=np.float64)
+                q_v = np.array(valid_vals[1::2], dtype=np.float64)
                 amplitudes = np.sqrt(i_v**2 + q_v**2)
+                if not np.all(np.isfinite(amplitudes)):
+                    return None
                 phases = np.arctan2(q_v, i_v).tolist()
                 amps = amplitudes.tolist()
-            elif len(raw_vals) > 0:
-                amps = [float(v) for v in raw_vals]
-                phases = [0.0] * len(amps)
             else:
-                # Synthesize 52 subcarriers if array was empty
-                amps = [12.0 + 3.0 * math.cos(k * 0.25) for k in range(52)]
-                phases = [0.0] * 52
+                amps = [float(v) for v in valid_vals]
+                phases = [0.0] * len(amps)
 
             n_sc = len(amps)
+            if n_sc < 2 or n_sc > 512:
+                return None
             n_ant = 1
             max_a = float(np.max(amps)) if amps and np.max(amps) > 0 else 1.0
-            norm_amps = [round(a / max_a, 4) for a in amps]
+            norm_amps = [round(float(a / max_a), 4) for a in amps]
 
             # Channel to frequency
             if 1 <= channel <= 14:
@@ -315,7 +323,9 @@ class UniversalCsiParser:
             else:
                 freq_mhz = 5210
 
-            snr = float(rssi - noise)
+            rssi_f = float(rssi) if math.isfinite(rssi) else -50.0
+            noise_f = float(noise) if math.isfinite(noise) else -95.0
+            snr = float(rssi_f - noise_f)
 
             return {
                 "type": "raw_csi",
@@ -497,6 +507,18 @@ class UsbSerialScanner:
             logger.warning("pyserial is not installed; USB Serial auto-scanning disabled.")
             return
 
+        def _port_priority(p_info) -> int:
+            desc = (p_info.description or "").lower()
+            hwid = (p_info.hwid or "").lower()
+            mfg = (p_info.manufacturer or "").lower()
+            is_esp = any(k in desc or k in hwid or k in mfg for k in ["cp210", "ch340", "ftdi", "silicon labs", "esp32", "jtag"])
+            has_usb = p_info.vid is not None or "usb" in desc or "usb" in hwid or "usb" in mfg
+            if is_esp:
+                return 0
+            if has_usb:
+                return 1
+            return 2
+
         while self.running:
             try:
                 all_comports = list_ports.comports()
@@ -504,20 +526,24 @@ class UsbSerialScanner:
                     self.scanned_ports = [p.device for p in all_comports]
 
                 # Filter candidate ports: exclude virtual Bluetooth serial ports that hang on Windows
-                candidate_ports = []
+                valid_comports = []
                 for p in all_comports:
                     desc = (p.description or "").lower()
                     hwid = (p.hwid or "").lower()
                     if "bluetooth" in desc or "bthenum" in hwid or "bth\\" in hwid:
                         continue
-                    candidate_ports.append(p.device)
+                    valid_comports.append(p)
 
-                if not candidate_ports:
+                if not valid_comports:
                     with self.lock:
                         if time.time() - self.last_packet_time >= 4.0:
                             self.connected = False
                     time.sleep(1.5)
                     continue
+
+                # Sort by USB-to-UART bridge likelihood
+                valid_comports.sort(key=_port_priority)
+                candidate_ports = [p.device for p in valid_comports]
 
                 # Try candidate ports
                 connected_to_port = False
@@ -528,7 +554,7 @@ class UsbSerialScanner:
                     for baud in self.SUPPORTED_BAUDS:
                         ser = None
                         try:
-                            ser = serial.Serial(port_name, baudrate=baud, timeout=0.2)
+                            ser = serial.Serial(port_name, baudrate=baud, timeout=0.2, write_timeout=0.2)
                         except Exception as e:
                             # Port is busy, permissions error, or not a valid serial device
                             logger.debug("Cannot open %s at %d: %s", port_name, baud, e)
@@ -538,11 +564,6 @@ class UsbSerialScanner:
                         if self._try_read_stream(ser, port_name, baud):
                             connected_to_port = True
                             break
-                        else:
-                            try:
-                                ser.close()
-                            except Exception:
-                                pass
 
                     if connected_to_port:
                         break
@@ -561,11 +582,12 @@ class UsbSerialScanner:
         """
         Reads from an open serial port, buffering bytes to extract either
         ADR-018 binary packets or newline-delimited CSI_DATA CSV lines.
-        Returns True if a valid CSI stream is maintained until disconnect.
+        Returns True if a valid CSI stream was established and active until disconnect.
         """
         buf = bytearray()
         first_frame_found = False
         start_time = time.time()
+        last_packet_rx = start_time
 
         try:
             while self.running:
@@ -574,42 +596,77 @@ class UsbSerialScanner:
                 if chunk:
                     buf.extend(chunk)
 
-                # Process buffer
                 packet_parsed = False
-
-                # 1. Look for ADR-018 binary magic 0xC5110001 (little endian b"\x01\x00\x11\xc5")
                 magic_bytes = b"\x01\x00\x11\xc5"
                 m_idx = buf.find(magic_bytes)
-                if m_idx != -1 and len(buf) >= m_idx + 20:
-                    magic, node_id, n_ant, n_sc = struct.unpack_from("<IBBH", buf, m_idx)
-                    total_len = 20 + max(1, n_ant * n_sc) * 2
-                    if len(buf) >= m_idx + total_len:
-                        raw_pkt = bytes(buf[m_idx : m_idx + total_len])
-                        del buf[: m_idx + total_len]
-                        parsed = UniversalCsiParser.parse(raw_pkt, source_addr=f"serial:{port_name}")
-                        if parsed:
-                            self._handle_decoded_packet(parsed, port_name, baud)
-                            first_frame_found = True
-                            packet_parsed = True
 
-                # 2. Look for newline-delimited CSI_DATA CSV lines
-                nl_idx = buf.find(b"\n")
-                if nl_idx != -1:
-                    line_bytes = buf[:nl_idx]
-                    del buf[: nl_idx + 1]
-                    try:
-                        line_str = line_bytes.decode("utf-8", errors="ignore").strip()
-                        if "CSI_DATA" in line_str:
-                            parsed = UniversalCsiParser.parse(line_str, source_addr=f"serial:{port_name}")
-                            if parsed:
-                                self._handle_decoded_packet(parsed, port_name, baud)
-                                first_frame_found = True
-                                packet_parsed = True
-                    except Exception:
-                        pass
+                if m_idx != -1:
+                    # If there are bytes before magic, check for CSV lines before discarding
+                    if m_idx > 0:
+                        nl_before = buf.find(b"\n", 0, m_idx)
+                        if nl_before != -1:
+                            line_str = buf[:nl_before].decode("utf-8", errors="ignore").strip()
+                            del buf[: nl_before + 1]
+                            if "CSI_DATA" in line_str:
+                                parsed = UniversalCsiParser.parse(line_str, source_addr=f"serial:{port_name}")
+                                if parsed:
+                                    self._handle_decoded_packet(parsed, port_name, baud)
+                                    first_frame_found = True
+                                    last_packet_rx = time.time()
+                                    packet_parsed = True
+                            m_idx = buf.find(magic_bytes)
+                        else:
+                            # Discard non-matching preamble before magic
+                            del buf[:m_idx]
+                            m_idx = 0
+
+                    if m_idx == 0:
+                        if len(buf) >= 20:
+                            magic, node_id, n_ant, n_sc = struct.unpack_from("<IBBH", buf, 0)
+                            if n_sc < 4 or n_sc > 512 or n_ant < 1 or n_ant > 4:
+                                # False magic match, discard magic bytes
+                                del buf[:4]
+                            else:
+                                total_len = 20 + n_ant * n_sc * 2
+                                if len(buf) >= total_len:
+                                    raw_pkt = bytes(buf[:total_len])
+                                    del buf[:total_len]
+                                    parsed = UniversalCsiParser.parse(raw_pkt, source_addr=f"serial:{port_name}")
+                                    if parsed:
+                                        self._handle_decoded_packet(parsed, port_name, baud)
+                                        first_frame_found = True
+                                        last_packet_rx = time.time()
+                                        packet_parsed = True
+                                # If len(buf) < total_len: packet is fragmented across chunks.
+                                # DO NOT parse newlines inside the binary packet payload!
+                else:
+                    # No binary magic in buffer: parse newline-delimited CSI_DATA CSV lines
+                    nl_idx = buf.find(b"\n")
+                    if nl_idx != -1:
+                        line_bytes = buf[:nl_idx]
+                        del buf[: nl_idx + 1]
+                        try:
+                            line_str = line_bytes.decode("utf-8", errors="ignore").strip()
+                            if "CSI_DATA" in line_str:
+                                parsed = UniversalCsiParser.parse(line_str, source_addr=f"serial:{port_name}")
+                                if parsed:
+                                    self._handle_decoded_packet(parsed, port_name, baud)
+                                    first_frame_found = True
+                                    last_packet_rx = time.time()
+                                    packet_parsed = True
+                        except Exception:
+                            pass
+
+                now = time.time()
+                # If stream established but idle for > 3.0 seconds, disconnect and re-probe
+                if first_frame_found and (now - last_packet_rx > 3.0):
+                    logger.debug("Serial stream idle on %s for > 3.0s, resetting connection", port_name)
+                    with self.lock:
+                        self.connected = False
+                    return False
 
                 # If no CSI frame found after 0.8s probe window, abort this port/baud
-                if not first_frame_found and (time.time() - start_time > 0.8):
+                if not first_frame_found and (now - start_time > 0.8):
                     return False
 
                 # Prevent buffer bloat if noise
@@ -623,11 +680,12 @@ class UsbSerialScanner:
             logger.debug("Serial connection dropped on %s: %s", port_name, e)
             with self.lock:
                 self.connected = False
+            return False
+        finally:
             try:
                 ser.close()
             except Exception:
                 pass
-            return False
 
         return first_frame_found
 
