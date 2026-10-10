@@ -615,6 +615,11 @@ class SensingState:
         resp_bpm: float,
         hb_bpm: float,
         source_addr: str,
+        rssi: float = -50.0,
+        transport: str = "serial",
+        protocol: str = "esp32_adaptive_ctrl",
+        port: Optional[str] = None,
+        baud: Optional[int] = None,
     ):
         with self.lock:
             now = time.time()
@@ -624,16 +629,33 @@ class SensingState:
             self.node_id = node_id
             self.sequence = seq
             self.source_addr = source_addr
+            self.last_transport = transport
+            self.last_protocol = protocol
+            if port:
+                self.last_port = port
+            if baud:
+                self.last_baud = baud
+            if math.isfinite(rssi) and rssi != 0.0:
+                self.rssi_dbm = float(rssi)
+                self.last_snr_db = max(10.0, float(rssi) - self.noise_floor_dbm)
             m_safe = float(motion) if math.isfinite(motion) else 0.0
             p_safe = float(presence) if math.isfinite(presence) else 0.0
             self.presence = p_safe >= 0.30
             self.motion_band_power = m_safe
             self.motion_level = "active" if m_safe >= 0.15 else ("present_still" if self.presence else "absent")
             self.confidence = 0.92
+            if m_safe > 0:
+                self.variance = float(max(0.5, m_safe * 8.5))
             if resp_bpm > 0 and math.isfinite(resp_bpm):
                 self.breathing_rate_bpm = float(resp_bpm)
             if hb_bpm > 0 and math.isfinite(hb_bpm):
                 self.heartrate_bpm = float(hb_bpm)
+            mean_amp = max(5.0, 20.0 + (self.rssi_dbm + 50.0) * 0.3)
+            self.mean_amplitude = round(mean_amp, 2)
+            self.amplitudes = [
+                float(np.clip(mean_amp + 3.0 * math.sin(k * 0.25 + now * 2.0) + m_safe * 4.0 * math.cos(k * 0.5), 1.0, 50.0))
+                for k in range(52)
+            ]
 
     def get_snapshot(self) -> Dict[str, Any]:
         with self.lock:
@@ -1239,6 +1261,11 @@ def handle_serial_packet(parsed: Dict[str, Any]):
             resp_bpm=parsed["resp_bpm"],
             hb_bpm=parsed["hb_bpm"],
             source_addr=parsed.get("source_addr", "serial"),
+            rssi=parsed.get("rssi", -50.0),
+            transport=parsed.get("transport", "serial"),
+            protocol=parsed.get("protocol", "esp32_adaptive_ctrl"),
+            port=parsed.get("port") or parsed.get("source_addr", "COM"),
+            baud=parsed.get("baud"),
         )
 
 

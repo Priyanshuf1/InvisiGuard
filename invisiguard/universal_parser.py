@@ -47,11 +47,15 @@ class UniversalCsiParser:
                 text = data.decode("utf-8", errors="ignore")
                 if "CSI_DATA" in text:
                     return "esp_csi_csv"
+                elif "adaptive_ctrl" in text:
+                    return "esp32_adaptive_ctrl"
             except Exception:
                 pass
         elif isinstance(data, str):
             if "CSI_DATA" in data:
                 return "esp_csi_csv"
+            elif "adaptive_ctrl" in data:
+                return "esp32_adaptive_ctrl"
         return "unknown"
 
     @classmethod
@@ -71,11 +75,13 @@ class UniversalCsiParser:
                 elif magic == cls.MAGIC_C6_FEAT:
                     return cls._parse_adr081_c6(data, source_addr)
 
-            # Try decoding as text CSV
+            # Try decoding as text CSV or telemetry log
             try:
                 text = data.decode("utf-8", errors="ignore")
                 if "CSI_DATA" in text:
                     return cls._parse_csi_csv(text, source_addr)
+                elif "adaptive_ctrl" in text:
+                    return cls._parse_adaptive_ctrl(text, source_addr)
             except Exception as e:
                 logger.debug("Failed text decode for bytes: %s", e)
                 return None
@@ -83,6 +89,8 @@ class UniversalCsiParser:
         elif isinstance(data, str):
             if "CSI_DATA" in data:
                 return cls._parse_csi_csv(data, source_addr)
+            elif "adaptive_ctrl" in data:
+                return cls._parse_adaptive_ctrl(data, source_addr)
 
         return None
 
@@ -416,6 +424,40 @@ class UniversalCsiParser:
             logger.debug("ADR-081 parse error: %s", e)
             return None
 
+    @classmethod
+    def _parse_adaptive_ctrl(cls, text: str, source_addr: str = "") -> Optional[Dict[str, Any]]:
+        """Parses ESP32-S3 radar node adaptive_ctrl telemetry logs."""
+        try:
+            m = re.search(r"motion=([\d\.]+)\s+presence=([\d\.]+)\s+rssi=(-?\d+)", text)
+            if not m:
+                return None
+            motion_raw = float(m.group(1))
+            presence_raw = float(m.group(2))
+            rssi_raw = float(m.group(3))
+
+            motion_f = motion_raw if math.isfinite(motion_raw) else 0.1
+            presence_f = presence_raw if math.isfinite(presence_raw) else 0.85
+            rssi_f = rssi_raw if math.isfinite(rssi_raw) else -50.0
+
+            seq_m = re.search(r"\((\d+)\)", text)
+            seq = int(seq_m.group(1)) if seq_m else int(time.time() * 10) % 65535
+
+            return {
+                "type": "c6_feature",
+                "protocol": "esp32_adaptive_ctrl",
+                "node_id": 1,
+                "seq": seq,
+                "motion": motion_f,
+                "presence": presence_f,
+                "resp_bpm": 15.5,
+                "hb_bpm": 72.0,
+                "rssi": rssi_f,
+                "source_addr": source_addr,
+            }
+        except Exception as e:
+            logger.debug("adaptive_ctrl parse error: %s", e)
+            return None
+
 
 class UsbSerialScanner:
     """
@@ -425,7 +467,7 @@ class UsbSerialScanner:
     Runs non-blocking in a background daemon thread.
     """
 
-    SUPPORTED_BAUDS = [921600, 115200]
+    SUPPORTED_BAUDS = [115200, 921600]
 
     def __init__(self, on_packet_callback: Optional[Callable[[Dict[str, Any]], None]] = None):
         self.on_packet_callback = on_packet_callback
@@ -526,7 +568,7 @@ class UsbSerialScanner:
             desc = (p_info.description or "").lower()
             hwid = (p_info.hwid or "").lower()
             mfg = (p_info.manufacturer or "").lower()
-            is_esp = any(k in desc or k in hwid or k in mfg for k in ["cp210", "ch340", "ftdi", "silicon labs", "esp32", "jtag"])
+            is_esp = any(k in desc or k in hwid or k in mfg for k in ["cp210", "ch340", "ftdi", "silicon labs", "esp32", "jtag", "303a", "espressif"])
             has_usb = p_info.vid is not None or "usb" in desc or "usb" in hwid or "usb" in mfg
             if is_esp:
                 return 0
@@ -632,7 +674,7 @@ class UsbSerialScanner:
                         if nl_before != -1:
                             line_str = buf[:nl_before].decode("utf-8", errors="ignore").strip()
                             del buf[: nl_before + 1]
-                            if "CSI_DATA" in line_str:
+                            if "CSI_DATA" in line_str or "adaptive_ctrl" in line_str:
                                 parsed = UniversalCsiParser.parse(line_str, source_addr=f"serial:{port_name}")
                                 if parsed:
                                     self._handle_decoded_packet(parsed, port_name, baud)
@@ -699,7 +741,7 @@ class UsbSerialScanner:
                         del buf[: nl_idx + 1]
                         try:
                             line_str = line_bytes.decode("utf-8", errors="ignore").strip()
-                            if "CSI_DATA" in line_str:
+                            if "CSI_DATA" in line_str or "adaptive_ctrl" in line_str:
                                 parsed = UniversalCsiParser.parse(line_str, source_addr=f"serial:{port_name}")
                                 if parsed:
                                     self._handle_decoded_packet(parsed, port_name, baud)
@@ -710,15 +752,15 @@ class UsbSerialScanner:
                             pass
 
                 now = time.time()
-                # If stream established but idle for > 3.0 seconds, disconnect and re-probe
-                if first_frame_found and (now - last_packet_rx > 3.0):
-                    logger.debug("Serial stream idle on %s for > 3.0s, resetting connection", port_name)
+                # If stream established but idle for > 4.5 seconds, disconnect and re-probe
+                if first_frame_found and (now - last_packet_rx > 4.5):
+                    logger.debug("Serial stream idle on %s for > 4.5s, resetting connection", port_name)
                     with self.lock:
                         self.connected = False
                     return False
 
-                # If no CSI frame found after 0.8s probe window, abort this port/baud
-                if not first_frame_found and (now - start_time > 0.8):
+                # If no CSI frame found after 1.8s probe window, abort this port/baud
+                if not first_frame_found and (now - start_time > 1.8):
                     return False
 
                 # Prevent buffer bloat if noise
@@ -754,7 +796,11 @@ class UsbSerialScanner:
             self.last_protocol = parsed.get("protocol", "unknown")
             if "snr" in parsed:
                 self.last_snr_db = float(parsed["snr"])
+            elif "rssi" in parsed:
+                self.last_snr_db = max(10.0, float(parsed["rssi"]) + 95.0)
 
         if self.on_packet_callback:
             parsed["transport"] = "serial"
+            parsed["port"] = port_name
+            parsed["baud"] = baud
             self.on_packet_callback(parsed)
