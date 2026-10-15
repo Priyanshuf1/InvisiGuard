@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InvisiGuard — WiFi CSI Sensing & Safety Platform</title>
+  <link rel="stylesheet" href="invisiguard-app.css?v=20261011_v5">
+  <link rel="icon" href="favicon.ico">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        for (const reg of regs) reg.unregister();
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then(keys => {
+        for (const k of keys) caches.delete(k);
+      });
+    }
+  </script>
+</head>
+<body>
+
+  <!-- Top Sticky Navigation Bar -->
+  <header class="site-header">
+    <div class="header-top">
+      <div class="brand-wrap">
+        <div class="brand-title">
+          <span class="brand-icon">&#x25a3;</span> InvisiGuard
+        </div>
+        <div class="brand-subtitle">WiFi CSI Sensing &amp; Safety Platform</div>
+      </div>
+
+      <div class="header-actions">
+        <a href="/legacy-dashboard.html" class="btn-toggle-source" style="text-decoration: none; color: inherit; display: inline-flex; align-items: center; gap: 6px;" title="Switch to Legacy Technical Dashboard">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          <span style="font-weight:600">Technical Dashboard</span>
+        </a>
+
+        <div class="status-badge">
+          <span class="status-dot disconnected" id="status-dot"></span>
+          <span id="status-label">DISCONNECTED (0 NODES)</span>
+        </div>
+
+        <button class="btn-toggle-source" id="btn-toggle-source" title="Toggle Hardware vs Demo Simulator">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span id="source-label">Live Hardware</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs (Separate Clean Sections like RuView) -->
+    <nav class="tabs-nav" role="tablist">
+      <button class="tab-btn active" data-tab="bedroom">
+        <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span> 3D Bedroom Sensing
+      </button>
+      <button class="tab-btn" data-tab="vitals">
+        <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Vital Signs
+      </button>
+      <button class="tab-btn" data-tab="hardware">
+        <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg></span> Hardware &amp; RF
+      </button>
+      <button class="tab-btn" data-tab="safety">
+        <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Safety &amp; Falls
+      </button>
+      <button class="tab-btn" data-tab="ml">
+        <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 1 10 10c0 5.52-4.48 10-10 10S2 17.52 2 12 6.48 2 12 2zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"/></svg></span> ML Training Studio
+      </button>
+      <button class="tab-btn" data-tab="architecture">
+        <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span> CSI Architecture
+      </button>
+    </nav>
+  </header>
+
+  <!-- Main Viewports -->
+  <main class="main-content">
+
+    <!-- ========================================================
+         TAB 1: 3D Bedroom Sensing (Full-Width Immersion)
+         ======================================================== -->
+    <section class="section-pane active" id="pane-bedroom">
+      <canvas id="scene-canvas"></canvas>
+
+      <!-- Overlay Controls — Spline Floating Glass Islands -->
+      <div class="bedroom-overlay">
+        <!-- Island 1: Left Telemetry & Scenario Selector -->
+        <div class="hud-island hud-island-left">
+          <div class="ruview-auto-badge" id="ruview-auto-badge">
+            <span class="hud-live-beacon"></span>
+            <span id="ruview-auto-mode-label">RUVIEW VOLUMETRIC RF FIELD · AUTO ADAPTIVE</span>
+          </div>
+
+          <div class="scenario-wrap" id="scenario-wrap">
+            <span class="scenario-label">Scenario:</span>
+            <select id="scenario-select" class="hud-select">
+              <option value="auto">Live Telemetry (Auto)</option>
+              <option value="sleep">Sleep Monitor (Bed)</option>
+              <option value="fever">Sick Student (Fever / High RR)</option>
+              <option value="study">Study (Seated at Desk)</option>
+              <option value="vitals">Vital Signs (Breathing)</option>
+              <option value="active">Active Motion (Doppler)</option>
+              <option value="fall">Fall Event Detection</option>
+              <option value="empty">Empty Room</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Island 2: Center Camera Director Pills (Theatre.js) -->
+        <div class="hud-island hud-island-center">
+          <div class="cam-director-pills" id="cam-director-pills" title="Theatre.js Camera Authoring Director Views">
+            <button type="button" class="cam-preset-btn active" data-cam="overview" title="Studio Isometric Angle">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              <span>Studio</span>
+            </button>
+            <button type="button" class="cam-preset-btn" data-cam="bed" title="Macro Sleep & Vitals Focus">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/></svg>
+              <span>Sleep</span>
+            </button>
+            <button type="button" class="cam-preset-btn" data-cam="desk" title="Study Desk Posture & Micro-Doppler">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              <span>Study</span>
+            </button>
+            <button type="button" class="cam-preset-btn" data-cam="radar" title="Top-Down Planar Fresnel Radar Projection">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              <span>Radar 2D</span>
+            </button>
+            <button type="button" class="cam-preset-btn tour-btn" id="btn-camera-tour" title="Play Autonomous Cinematic Camera Flight Tour">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span id="label-cam-tour">Tour</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Island 3: Right Live Vitals Pill & Camera Reset -->
+        <div class="hud-island hud-island-right">
+          <div class="bedroom-vitals-pill" id="bedroom-vitals-pill" title="Live Continuous Biometrics from WiFi Doppler Phase">
+            <span class="vitals-live-dot">●</span>
+            <span class="vitals-live-label" style="display:inline-flex; align-items:center; gap:4px;">
+              <span id="live-cardiac-icon" style="display:inline-flex; align-items:center; transition: transform 0.1s ease; color:#ff4060;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="#ff4060"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              </span>
+              <strong id="pill-hr">72</strong> BPM
+            </span>
+            <span class="vitals-live-sep" style="opacity:0.35; margin:0 4px;">|</span>
+            <span class="vitals-live-label" style="display:inline-flex; align-items:center; gap:4px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 4v8m0 0l-3 4m3-4l3 4"/><circle cx="6" cy="15" r="3"/><circle cx="18" cy="15" r="3"/></svg>
+              <strong id="pill-br">15.6</strong> RPM
+            </span>
+          </div>
+          <button class="icon-btn" id="btn-reset-cam" title="Reset Camera View (Studio Isometric)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Theatre.js Cinematic Timeline Scrubber HUD -->
+      <div class="theatre-scrubber-hud" id="theatre-scrubber-hud">
+        <button type="button" class="scrub-play-btn" id="btn-scrub-play" title="Play / Pause Cinematic Camera Flight Sequence">
+          <svg id="icon-scrub-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <svg id="icon-scrub-pause" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display: none;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+
+        <div class="scrub-track-wrap">
+          <div class="scrub-keyframes-guide">
+            <span class="kf-marker" style="left: 0%;" title="0.0s: Studio Overview">◆ Studio</span>
+            <span class="kf-marker" style="left: 25%;" title="3.0s: Bed Vitals">◆ Bed</span>
+            <span class="kf-marker" style="left: 50%;" title="6.0s: Study Desk">◆ Desk</span>
+            <span class="kf-marker" style="left: 75%;" title="9.0s: Overhead Radar">◆ Radar</span>
+          </div>
+          <input type="range" class="theatre-slider" id="cam-timeline-scrubber" min="0" max="12" step="0.05" value="0">
+        </div>
+
+        <div class="scrub-info-wrap">
+          <span class="scrub-timecode" id="scrub-timecode">00:00.0 / 12.0s</span>
+          <span class="scrub-sep">·</span>
+          <span class="scrub-view-label" id="scrub-view-desc">Studio Overview</span>
+        </div>
+      </div>
+
+      <div class="bedroom-status-strip">
+        <div class="strip-item" id="strip-tier-info">
+          <span class="strip-dot" id="strip-tier-dot" style="background:#00d878;">●</span>
+          <span id="strip-tier-text">TIER 1 · VOLUMETRIC GREEN FOG RF DISRUPTION CLOUD (1 ESP32 LIVE)</span>
+        </div>
+        <div class="strip-divider"></div>
+        <div class="strip-item">
+          <span>Doppler Respiration: <strong id="hud-breath-power" style="color:var(--green-bright);">0.18</strong></span>
+        </div>
+        <div class="strip-divider"></div>
+        <div class="strip-item">
+          <span>Motion Power: <strong id="hud-motion-power" style="color:var(--terra-sun);">0.02</strong></span>
+        </div>
+        <div class="strip-divider"></div>
+        <div class="strip-item">
+          <span>Vitals: <strong id="hud-vitals-summary" style="color:var(--green-bright); display: inline-flex; align-items: center; gap: 4px;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#ff4060"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            <span>72 BPM</span> &middot; 
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 4v8m0 0l-3 4m3-4l3 4"/><circle cx="6" cy="15" r="3"/><circle cx="18" cy="15" r="3"/></svg>
+            <span>15.6 RPM</span>
+          </strong></span>
+        </div>
+        <div class="strip-divider"></div>
+        <div class="strip-item" id="strip-fan-status">
+          <span style="color: var(--terra-sun); display: inline-flex; align-items: center; gap: 4px;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>Fan Notch:</span>
+            <strong id="hud-fan-text" style="color: var(--green-bright);">-45.2 dB Active</strong>
+          </span>
+        </div>
+        <div class="strip-divider"></div>
+        <div class="strip-item" style="color: var(--text-dim); font-size: 11px;">Orbit: Drag &middot; Zoom: Scroll</div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 2: Vital Signs & Biometrics Suite
+         ======================================================== -->
+    <section class="section-pane" id="pane-vitals">
+      <div class="section-container">
+        <div class="section-header">
+          <h2 class="section-title">Vital Signs &amp; Micro-Doppler Biometrics</h2>
+          <p class="section-subtitle">Real-time physiological estimation via WiFi subcarrier Doppler chest micro-vibrations.</p>
+        </div>
+
+        <div class="card-grid-3">
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Heart Rate</span>
+              <span class="card-badge">ECG Pulse</span>
+            </div>
+            <div class="vital-metric-val"><span id="vit-hr">--</span> <span class="vital-metric-unit">BPM</span></div>
+            <div class="vital-metric-bar"><div id="vit-hr-bar" class="vital-metric-fill"></div></div>
+            <div style="font-size: 11px; color: var(--text-label); margin-top: 8px;">Resting nominal: 60 - 100 BPM</div>
+          </div>
+
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Respiration Rate</span>
+              <span class="card-badge">Breathing</span>
+            </div>
+            <div class="vital-metric-val"><span id="vit-br">--</span> <span class="vital-metric-unit">RPM</span></div>
+            <div class="vital-metric-bar"><div id="vit-br-bar" class="vital-metric-fill"></div></div>
+            <div style="font-size: 11px; color: var(--text-label); margin-top: 8px;">Resting nominal: 12 - 20 RPM</div>
+          </div>
+
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Estimation Confidence</span>
+              <span class="card-badge">SNR Quality</span>
+            </div>
+            <div class="vital-metric-val"><span id="vit-conf">--</span> <span class="vital-metric-unit">%</span></div>
+            <div class="vital-metric-bar"><div id="vit-conf-bar" class="vital-metric-fill green"></div></div>
+            <div style="font-size: 11px; color: var(--text-label); margin-top: 8px;">Based on Doppler peak-to-noise ratio</div>
+          </div>
+        </div>
+
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title">Live Doppler Micro-Pulse Waveform</span>
+            <span class="card-badge">Continuous Trace</span>
+          </div>
+          <div class="canvas-box">
+            <div class="canvas-label">Cardiac Trace Synthesis (P-Q-R-S-T)</div>
+            <canvas id="vitals-ecg-canvas" class="metric-canvas" width="1160" height="90"></canvas>
+          </div>
+          <div style="font-size: 11px; color: var(--text-label); font-style: italic; margin-top: 10px; text-align: center;">
+            Estimated via RF Doppler perturbation &middot; Non-invasive &middot; No wearable device required
+          </div>
+        </div>
+
+        <!-- Doppler FFT Frequency Spectrum & Fan Noise Rejection -->
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title">Doppler Micro-Frequency FFT Spectrum &amp; Fan Noise Isolation</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="card-badge" id="fft-filter-badge" style="background: rgba(0,216,120,0.12); color: var(--green-bright); border: 1px solid rgba(0,216,120,0.3);">
+                ✓ Comb &amp; Bandpass Filter Active (-45 dB)
+              </span>
+              <button id="btn-toggle-fft-filter" class="timer-pill" style="padding: 3px 8px; font-size: 10px;">Toggle Raw / Filtered</button>
+            </div>
+          </div>
+          <div class="canvas-box">
+            <div class="canvas-label">Frequency Domain (0.0 Hz to 20.0 Hz) · Respiration (0.25 Hz) &amp; Cardiac (1.2 Hz) vs Fan (4.5 Hz) vs Cooler (16 Hz)</div>
+            <canvas id="vitals-fft-canvas" class="metric-canvas" width="1160" height="110"></canvas>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px;">
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #00d878; margin-bottom: 4px;">● RESPIRATION PASSBAND (0.15 - 0.4 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">Chest displacement: 5–12 mm. Wavelet bandpass extracts clear sinusoidal envelope.</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #38bdf8; margin-bottom: 4px;">● CARDIAC PASSBAND (0.8 - 2.0 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">Aortic ejection micro-pulse: 0.2–0.5 mm. High-Q bandpass peak tracking (48–120 BPM).</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #f59e0b; margin-bottom: 4px;">✕ CEILING FAN NOTCH (3.5 - 6.5 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">3-blade 300 RPM motor modulation is stripped using narrow harmonic comb notch filtering.</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 10px; font-weight: 700; color: #ff4060; margin-bottom: 4px;">✕ COOLER VIBRATION (&gt; 15 Hz)</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">Desert cooler water pump and blower vibrations fall completely outside vital bands and are attenuated by 50 dB.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Clinical Triaging: Sleeping vs Sick Student Assessment -->
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title">Clinical Triaging: Sleeping vs. Sick vs. Distress Assessment</span>
+            <span class="card-badge" id="clinical-triage-badge" style="background: rgba(0,216,120,0.12); color: var(--green-bright); border: 1px solid rgba(0,216,120,0.3);">
+              ✓ Normal Restful Sleep
+            </span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 14px;">
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Nocturnal Restlessness</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--terra-pale); font-family: 'JetBrains Mono', monospace;" id="triage-restless">
+                0.03 <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">Index (Calm)</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-label); margin-top: 6px;">Threshold for fever agitation: &gt; 0.35</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Respiratory Regularity</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--green-bright); font-family: 'JetBrains Mono', monospace;" id="triage-respreg">
+                98.2% <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">(Eupnea)</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-label); margin-top: 6px;">Low regularity indicates asthma or dyspnea</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Fever / Sickness Score</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--text-primary); font-family: 'JetBrains Mono', monospace;" id="triage-feverscore">
+                0.04 <span style="font-size: 12px; font-weight: 500; color: var(--green-bright);">(Low Risk)</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-label); margin-top: 6px;">Elevated HR (&gt;95) + RR (&gt;24) while still = Fever</div>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px;">
+            <strong style="color: var(--terra-sun);">How InvisiGuard Differentiates States:</strong><br>
+            &bull; <strong style="color: #fff;">Healthy Sleep:</strong> Stable, rhythmic respiration (12–16 RPM), resting bradycardia (55–68 BPM), and minimal position adjustments.<br>
+            &bull; <strong style="color: #fff;">High Fever / Sickness:</strong> Sustained resting tachycardia (&gt; 95 BPM) coupled with tachypnea (&gt; 24 RPM) and frequent restless turning.<br>
+            &bull; <strong style="color: #fff;">Sudden Fall / Unconscious:</strong> High vertical acceleration impact followed by sustained floor stillness (&gt; 120s) with shallow floor breathing.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 3: Hardware & RF Signals
+         ======================================================== -->
+    <section class="section-pane" id="pane-hardware">
+      <div class="section-container">
+        <div class="section-header">
+          <h2 class="section-title">Hardware Infrastructure &amp; RF Telemetry</h2>
+          <p class="section-subtitle">Real-time status of the ESP32 CSI sensor node, UDP receiver, and 2.4 GHz channel metrics.</p>
+        </div>
+
+        <div class="card-grid-2">
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">ESP32-S3 Node Link</span>
+              <span class="card-badge">UDP :5005</span>
+            </div>
+            <table class="data-table">
+              <tr><td>Node Status</td><td id="hw-nodes">0 Nodes Connected</td></tr>
+              <tr><td>Transport Protocol</td><td>Raw UDP Datagram (ADR-018)</td></tr>
+              <tr><td>Listen Port</td><td>0.0.0.0:5005</td></tr>
+              <tr><td>Total Received Packets</td><td id="hw-pkts">0 pkts</td></tr>
+              <tr><td>Channel Subcarriers</td><td>52 OFDM subcarriers</td></tr>
+            </table>
+          </div>
+
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Radio Signal Metrics</span>
+              <span class="card-badge" id="hw-channel-badge">Channel 13</span>
+            </div>
+            <table class="data-table">
+              <tr><td>Mean RSSI</td><td id="hw-rssi">-- dBm</td></tr>
+              <tr><td>Noise Floor</td><td id="hw-noise">-95.0 dBm</td></tr>
+              <tr><td>Doppler Variance</td><td id="hw-var">--</td></tr>
+              <tr><td>Motion Band Power</td><td id="hw-mot">--</td></tr>
+              <tr><td>RF Center Frequency</td><td id="hw-rf-freq">2472 MHz (2.4 GHz)</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <div class="ui-card">
+          <div class="card-header">
+            <span class="card-title">Rolling RSSI Signal History (30s Window)</span>
+            <span class="card-badge">Telemetry</span>
+          </div>
+          <div class="canvas-box">
+            <canvas id="hw-spark-canvas" class="metric-canvas" width="1160" height="90"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 4: Safety & Fall Detection Monitor
+         ======================================================== -->
+    <section class="section-pane" id="pane-safety">
+      <div class="section-container">
+        <div class="section-header">
+          <h2 class="section-title">Hostel Safety &amp; Anti-Ragging Monitor</h2>
+          <p class="section-subtitle">Camera-free incident classification for dormitories and washrooms.</p>
+        </div>
+
+        <div id="safety-state-card" class="alert-card-state safe">
+          <span id="safety-state-text">&#10003; ROOM SECURE &middot; MONITORING ACTIVE</span>
+        </div>
+
+        <div class="card-grid-3">
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Fall Detection</span>
+              <span class="card-badge">Instant</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+              Triggers when sudden multipath Doppler energy spikes (variance &gt; 350) followed by immediate ground-plane stillness.
+            </p>
+            <div style="font-size: 11px; color: var(--terra-pale);">Status: Enabled &middot; Threshold: 350 var</div>
+          </div>
+
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Anti-Ragging / Struggle</span>
+              <span class="card-badge">Continuous</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+              Detects prolonged high-frequency multi-body struggle patterns distinct from ordinary walking or fan turbulence.
+            </p>
+            <div style="font-size: 11px; color: var(--terra-pale);">Status: Enabled &middot; Sustained Motion Filter</div>
+          </div>
+
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Inactivity Alert</span>
+              <span class="card-badge">Timer</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+              Monitors prolonged stillness following an unrecovered impact to alert hostel wardens automatically.
+            </p>
+            <div style="font-size: 11px; color: var(--terra-pale);">Timeout: 120 seconds post-impact</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 5: ML Training Studio (Daily Re-calibration & Real ML)
+         ======================================================== -->
+    <section class="section-pane" id="pane-ml">
+      <div class="section-container">
+        <div class="section-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="section-title">Hostel CSI AI Studio &amp; Daily Model Training</h2>
+            <p class="section-subtitle">Calibrate empty bedroom baseline reflections, collect labeled human activity frames, and train the production Random Forest classifier daily.</p>
+          </div>
+          <div style="text-align: right;">
+            <span class="status-badge" style="font-size: 11px;">
+              <span class="status-dot live"></span>
+              <span id="ml-active-model-badge">Model: Active &middot; 100.0% Validation Accuracy</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Real-Time Recording Banner -->
+        <div id="ml-record-banner" class="ui-card" style="margin-bottom: 20px; display: none; background: rgba(255, 64, 96, 0.08); border-color: rgba(255, 64, 96, 0.4);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span class="rec-pulsing-badge">● RECORDING IN PROGRESS</span>
+              <span style="font-size: 13px; font-weight: 600; color: #fff;">Class: <span id="banner-rec-class">EMPTY_ROOM</span></span>
+              <span style="font-size: 12px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;">Frames: <strong id="banner-rec-frames" style="color: var(--terra-pale);">0</strong></span>
+              <span style="font-size: 12px; color: #38bdf8; font-family: 'JetBrains Mono', monospace;">Duration: <strong id="banner-rec-timer">00:00</strong></span>
+            </div>
+            <button id="btn-banner-stop" class="btn-danger" style="padding: 7px 16px; font-size: 11px;">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+              <span>Stop Recording &amp; Save</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 5 Interactive Class Recorders with Preparation Timers -->
+        <div class="class-rec-grid">
+          <!-- Class 0: Empty Room -->
+          <div class="class-rec-card" style="border-color: rgba(245, 192, 122, 0.4);">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M14 11h.01"/></svg>
+                  0: Empty Bedroom
+                </span>
+                <span class="class-card-count" id="count-class-0">--</span>
+              </div>
+              <div class="class-card-desc">Zero-motion multipath reference. Filters stationary furniture and wall reflections.</div>
+            </div>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="0" data-name="EMPTY_ROOM" data-sec="20" style="margin-bottom: 8px;" title="20s prep to exit bedroom and close door">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>20s Prep &amp; Calib (Exit Room)</span>
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="0" data-name="EMPTY_ROOM">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <span>Start</span>
+                </button>
+                <button class="btn-rec-stop" data-class="0" disabled>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                  <span>Stop</span>
+                </button>
+                <button class="btn-rec-delete" data-class="0" data-name="EMPTY_ROOM" title="Delete recorded frames for Empty Bedroom">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Class 1: Studying -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                  1: Desk Study
+                </span>
+                <span class="class-card-count" id="count-class-1">--</span>
+              </div>
+              <div class="class-card-desc">Seated student typing, reading, and gentle breathing micro-movements.</div>
+            </div>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="1" data-name="NORMAL_STUDYING" data-sec="10" style="margin-bottom: 8px;" title="10s prep to walk over and sit comfortably at desk">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>10s Prep &amp; Record (Sit at Desk)</span>
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="1" data-name="NORMAL_STUDYING">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <span>Start</span>
+                </button>
+                <button class="btn-rec-stop" data-class="1" disabled>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                  <span>Stop</span>
+                </button>
+                <button class="btn-rec-delete" data-class="1" data-name="NORMAL_STUDYING" title="Delete recorded frames for Desk Study / Sitting">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Class 2: Walking -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><path d="M10 22l2-7 3 3v4M8 15l2-4 3-1 3 3"/></svg>
+                  2: Room Pacing
+                </span>
+                <span class="class-card-count" id="count-class-2">--</span>
+              </div>
+              <div class="class-card-desc">Continuous bipedal movement across the bedroom floor plane.</div>
+            </div>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="2" data-name="WALKING" data-sec="10" style="margin-bottom: 8px;" title="10s prep to get into starting corner position">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>10s Prep &amp; Record (Walk to Corner)</span>
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="2" data-name="WALKING">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <span>Start</span>
+                </button>
+                <button class="btn-rec-stop" data-class="2" disabled>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                  <span>Stop</span>
+                </button>
+                <button class="btn-rec-delete" data-class="2" data-name="WALKING" title="Delete recorded frames for Room Pacing / Walking">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Class 3: Violent Struggle -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  3: Struggle / Ragging
+                </span>
+                <span class="class-card-count" id="count-class-3">--</span>
+              </div>
+              <div class="class-card-desc">Fast multi-limb struggle, sudden directional changes, and high-frequency Doppler spikes.</div>
+            </div>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="3" data-name="VIOLENT_STRUGGLE" data-sec="10" style="margin-bottom: 8px;" title="10s prep to ready simulation stance with partner">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>10s Prep &amp; Record (Ready Stance)</span>
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="3" data-name="VIOLENT_STRUGGLE">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <span>Start</span>
+                </button>
+                <button class="btn-rec-stop" data-class="3" disabled>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                  <span>Stop</span>
+                </button>
+                <button class="btn-rec-delete" data-class="3" data-name="VIOLENT_STRUGGLE" title="Delete recorded frames for Struggle / Ragging">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Class 4: Fall Event -->
+          <div class="class-rec-card">
+            <div>
+              <div class="class-card-top">
+                <span class="class-card-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  4: Sudden Fall
+                </span>
+                <span class="class-card-count" id="count-class-4">--</span>
+              </div>
+              <div class="class-card-desc">Vertical velocity drop followed by floor stillness and micro-breathing.</div>
+            </div>
+            <div>
+              <button class="btn-rec-calib btn-open-prep" data-class="4" data-name="FALL_EVENT" data-sec="10" style="margin-bottom: 8px;" title="10s prep to position safely on mat before fall">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>10s Prep &amp; Record (Stand on Mat)</span>
+              </button>
+              <div class="class-card-btns">
+                <button class="btn-rec-start" data-class="4" data-name="FALL_EVENT">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <span>Start</span>
+                </button>
+                <button class="btn-rec-stop" data-class="4" disabled>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                  <span>Stop</span>
+                </button>
+                <button class="btn-rec-delete" data-class="4" data-name="FALL_EVENT" title="Delete recorded frames for Sudden Fall">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dataset Balance Bar -->
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title">Dataset Balance &amp; Diversity</span>
+            <span class="card-badge" id="badge-total-samples">Total: -- Frames</span>
+          </div>
+          <div class="dataset-bar-wrap">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">
+              <span>Distribution across classes (Need &ge; 20 frames each)</span>
+              <span id="label-dataset-status">Checking balance...</span>
+            </div>
+            <div class="dataset-bar">
+              <div id="bar-seg-0" class="dataset-bar-seg" style="width: 20%; background: #F5C07A;" title="0: Empty"></div>
+              <div id="bar-seg-1" class="dataset-bar-seg" style="width: 20%; background: #00d878;" title="1: Study"></div>
+              <div id="bar-seg-2" class="dataset-bar-seg" style="width: 20%; background: #38bdf8;" title="2: Walk"></div>
+              <div id="bar-seg-3" class="dataset-bar-seg" style="width: 20%; background: #f59e0b;" title="3: Struggle"></div>
+              <div id="bar-seg-4" class="dataset-bar-seg" style="width: 20%; background: #ff4060;" title="4: Fall"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selective Dataset Management & Pruning Controls -->
+        <div class="ui-card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <span class="card-title" style="display: flex; align-items: center; gap: 8px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Selective Dataset Pruning &amp; Session Management
+            </span>
+            <span class="card-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">Precision Data Filtering</span>
+          </div>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+            Filter and selectively delete training samples by date, session, or specific class without losing or corrupting the rest of your dataset.
+          </p>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 12px;">
+            <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px;">
+              <label style="font-size: 10px; text-transform: uppercase; color: var(--text-label); font-weight: 600;">Filter by Date</label>
+              <select id="select-prune-date" class="ui-select" style="background: rgba(0,0,0,0.5); border: 1px solid var(--bg-border); color: #fff; border-radius: 6px; padding: 7px 10px; font-size: 12px;">
+                <option value="all">All Dates / All Days</option>
+                <option value="today">Today's Sessions</option>
+              </select>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 160px;">
+              <label style="font-size: 10px; text-transform: uppercase; color: var(--text-label); font-weight: 600;">Filter by Behavior Class</label>
+              <select id="select-prune-class" class="ui-select" style="background: rgba(0,0,0,0.5); border: 1px solid var(--bg-border); color: #fff; border-radius: 6px; padding: 7px 10px; font-size: 12px;">
+                <option value="all">All 5 Classes</option>
+                <option value="0">0: Empty Bedroom</option>
+                <option value="1">1: Desk Study / Sitting</option>
+                <option value="2">2: Room Pacing / Walking</option>
+                <option value="3">3: Struggle / Ragging</option>
+                <option value="4">4: Sudden Fall</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button id="btn-prune-selected" class="btn-danger" style="padding: 7px 14px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                <span>Delete Filtered Data</span>
+              </button>
+              <button id="btn-undo-session" class="btn-secondary" style="padding: 7px 14px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;" title="Discard only the most recent recording session">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                <span>Undo Last Session</span>
+              </button>
+              <button id="btn-restore-backup" class="btn-secondary" style="padding: 7px 14px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; border-color: rgba(0, 216, 120, 0.4); color: var(--green-bright);" title="Restore dataset from the latest automatic safety backup">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                <span>Restore Backup</span>
+              </button>
+              <button id="btn-refresh-dataset" class="btn-secondary" style="padding: 7px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px;" title="Refresh dataset statistics">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+          <div id="prune-status-msg" style="font-size: 11px; color: var(--terra-pale); min-height: 16px;"></div>
+        </div>
+
+        <!-- Model Training & Live Pipeline Grid -->
+        <div class="card-grid-2">
+          <!-- Daily Training Engine -->
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Model Training Engine (Daily Retraining)</span>
+              <span class="card-badge">RandomForest (100 Trees)</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+              Train the 10-feature scikit-learn classifier with cooler motor noise rejection directly on your local sensing backend.
+            </p>
+            <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+              <button id="btn-start-train" class="btn-primary" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span>Train Production Model (Daily Calibration)</span>
+              </button>
+            </div>
+            <div class="terminal-log" id="train-terminal-log">
+              [SYSTEM] InvisiGuard ML Engine ready.<br>
+              [DATA] Benchmark dataset loaded: 10 features &times; 5 classes.<br>
+              [HOT-RELOAD] Models are automatically hot-reloaded into live radar inference.
+            </div>
+          </div>
+
+          <!-- Live Model Inference Verification -->
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Live Model Prediction (Real-Time Ingestion)</span>
+              <span class="card-badge" id="live-pred-badge">Active</span>
+            </div>
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-label); margin-bottom: 4px;">Detected Behavior Class</div>
+              <div style="font-size: 24px; font-weight: 800; color: var(--green-bright); font-family: 'JetBrains Mono', monospace;" id="live-pred-class">
+                NORMAL_STUDYING
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 10px; color: var(--text-label);">CLASSIFICATION CONFIDENCE</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--terra-pale);" id="live-pred-conf">98%</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 10px; color: var(--text-label);">FAN NOISE REJECTION</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--green-bright);">SUPPRESSED</div>
+              </div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">
+              InvisiGuard uses spectral entropy &amp; subcarrier dispersion to decouple electric ceiling fan or cooler noise from true human respiration and movement.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 6: CSI Architecture & Theory
+         ======================================================== -->
+    <section class="section-pane" id="pane-architecture">
+      <div class="section-container">
+        <div class="section-header">
+          <h2 class="section-title">SIH Project: WiFi CSI Architecture</h2>
+          <p class="section-subtitle">How WiFi Channel State Information enables 100% privacy-preserving human sensing.</p>
+        </div>
+
+        <div class="card-grid-2">
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Why CSI Over Cameras?</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+              Cameras cannot be placed in hostel bedrooms, bathrooms, or shower areas due to fundamental privacy violations. 
+              WiFi signals penetrate doors, thin walls, and steam, while CSI (Channel State Information) captures only raw physical signal attenuation and phase shifts, ensuring zero photographic recording of students.
+            </p>
+          </div>
+
+          <div class="ui-card">
+            <div class="card-header">
+              <span class="card-title">Physics &amp; Signal Processing</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+              When a human body breathes, steps, or falls, it perturbs the 52 OFDM subcarriers of a standard 802.11n Wi-Fi frame. 
+              By computing the variance, Doppler spectrum, and band power across subcarriers, our micro-Doppler engine separates human motion from environmental ceiling fans and cooler noise.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Universal Multi-Class Preparation & Calibration Modal -->
+  <div id="calibration-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-badge" id="calib-modal-badge">ROOM BASELINE CALIBRATION</div>
+      <h3 class="modal-title" id="calib-modal-title">Please Exit the Bedroom Now</h3>
+      <p class="modal-desc" id="calib-modal-desc">
+        Step outside and close the bedroom door. Baseline recording will begin in 20 seconds to establish zero-human multipath reference.
+      </p>
+
+      <!-- Prep Duration Selector Pills -->
+      <div class="timer-pills-row" id="calib-duration-pills">
+        <span style="font-size: 11px; color: var(--text-label); align-self: center; margin-right: 4px;">PREP TIME:</span>
+        <button type="button" class="timer-pill" data-sec="5">5s Quick</button>
+        <button type="button" class="timer-pill" data-sec="10">10s Standard</button>
+        <button type="button" class="timer-pill" data-sec="20">20s Extended</button>
+      </div>
+
+      <div class="countdown-circle-wrap" id="calib-countdown-wrap">
+        <svg class="countdown-svg" viewBox="0 0 120 120">
+          <circle class="countdown-bg" cx="60" cy="60" r="54"></circle>
+          <circle class="countdown-progress" id="countdown-progress-ring" cx="60" cy="60" r="54"></circle>
+        </svg>
+        <div class="countdown-inner">
+          <div class="countdown-number" id="countdown-number">20</div>
+          <div class="countdown-unit" id="countdown-unit-text">SECONDS TO REC</div>
+        </div>
+      </div>
+
+      <div id="calib-recording-state" style="display: none; margin: 16px 0;">
+        <div class="rec-pulsing-badge" id="calib-rec-badge">● RECORDING ZERO-MOTION BASELINE</div>
+        <div class="rec-metric-row">
+          <span>Frames Captured: <strong id="modal-rec-samples" style="color: var(--terra-sun);">0</strong></span> &middot;
+          <span>Elapsed: <strong id="modal-rec-timer" style="color: #38bdf8;">00:00</strong></span> &middot;
+          <span>Multipath Var: <strong id="modal-rec-var" style="color: var(--green-bright);">0.18</strong></span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">
+          Recording continuously until you click &quot;Stop &amp; Save Data&quot;. The last 10s of movement noise will be automatically pruned.
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-skip-countdown" class="btn-primary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span>Start Recording Now</span>
+        </button>
+        <button id="btn-stop-calibration" class="btn-danger" style="display: none;">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          <span>Stop &amp; Save Data</span>
+        </button>
+        <button id="btn-cancel-calibration" class="btn-secondary">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>Cancel</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js CDN with Importmap -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Application Controller -->
+  <script type="module" src="invisiguard-app.js?v=20261011_v5"></script>
+</body>
+</html>
