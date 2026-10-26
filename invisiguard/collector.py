@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 INVISIGUARD: Real-World CSI Dataset Collector & Noise-Resilient ML Engine
-Created for Smart India Hackathon (SIH) — InvisiGuard Project.
 
 Capabilities:
 1. Connects to live ESP32 radar stream (ws://localhost:3000/ws/sensing).
